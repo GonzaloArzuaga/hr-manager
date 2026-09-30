@@ -34,7 +34,7 @@ export default function Dashboard() {
       </p>
 
       {rol === 'empleador' && resumen && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 gap-4">
           <div className="card">
             <p className="text-sm text-gray-500">Empleados activos</p>
             <p className="text-3xl font-semibold mt-1">{resumen.totalEmpleados ?? 0}</p>
@@ -60,24 +60,9 @@ export default function Dashboard() {
             <p className="text-sm text-gray-500">Tipo de turno</p>
             <p className="text-3xl font-semibold mt-1 capitalize">{empleado?.tipo_turno ?? '—'}</p>
           </div>
-          <div className="card">
-            <p className="text-sm text-gray-500">Código de tu organización</p>
-            <p className="text-3xl font-semibold mt-1">{perfil?.organizaciones?.codigo_invitacion ?? '—'}</p>
-          </div>
         </div>
       )}
 
-      {rol === 'empleador' && (
-        <div className="card mt-6">
-          <p className="text-sm font-medium mb-1">Código de invitación para tus empleados</p>
-          <p className="text-2xl font-mono tracking-wider text-primary">
-            {perfil?.organizaciones?.codigo_invitacion}
-          </p>
-          <p className="text-xs text-gray-500 mt-2">
-            Compartí este código con tu equipo — lo van a necesitar para registrarse como empleados.
-          </p>
-        </div>
-      )}
     </div>
   )
 }

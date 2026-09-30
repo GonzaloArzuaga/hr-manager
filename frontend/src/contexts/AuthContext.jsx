@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
   const cargarPerfil = useCallback(async (userId) => {
     const { data: perfilData } = await supabase
       .from('perfiles')
-      .select('*, organizaciones(nombre, codigo_invitacion)')
+      .select('*, organizaciones(nombre)')
       .eq('id', userId)
       .single()
 
@@ -31,22 +31,18 @@ export function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) {
-        cargarPerfil(session.user.id).finally(() => setCargando(false))
-      } else {
-        setCargando(false)
-      }
-    })
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session?.user) {
-        cargarPerfil(session.user.id)
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nuevaSesion) => {
+      setSession(nuevaSesion)
+      if (nuevaSesion?.user) {
+        setCargando(true)
+        // Se difiere la consulta para no bloquear el callback de autenticación
+        setTimeout(() => {
+          cargarPerfil(nuevaSesion.user.id).finally(() => setCargando(false))
+        }, 0)
       } else {
         setPerfil(null)
         setEmpleado(null)
+        setCargando(false)
       }
     })
 
@@ -67,6 +63,7 @@ export function AuthProvider({ children }) {
     perfil,
     empleado,
     rol: perfil?.rol ?? null,
+    debeCambiarPassword: perfil?.debe_cambiar_password === true,
     cargando,
     cerrarSesion,
     recargarPerfil
