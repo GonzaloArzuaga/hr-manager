@@ -1,468 +1,2231 @@
 -- ============================================================================
--- HR MANAGER - Esquema de base de datos completo
--- ============================================================================
--- Cómo usar este archivo:
--- 1. Andá al panel de Supabase de tu proyecto -> SQL Editor -> New query
--- 2. Pegá TODO este archivo y ejecutalo (botón "Run")
--- 3. Listo: quedan creadas las tablas, las funciones del motor de reglas,
---    las vistas de estadísticas y las políticas de seguridad (RLS).
--- ============================================================================
-
-create extension if not exists "pgcrypto";
-
--- ============================================================================
--- 1. TABLAS PRINCIPALES
--- ============================================================================
-
--- Organizaciones (esto es lo que hace al sistema multiempresa / multi-tenant)
-create table organizaciones (
-  id uuid primary key default gen_random_uuid(),
-  nombre text not null,
-  codigo_invitacion text not null unique,
-  creado_en timestamptz not null default now()
-);
-
--- Perfiles de usuario: extiende la tabla auth.users que ya crea Supabase
-create table perfiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  nombre_completo text not null,
-  rol text not null check (rol in ('empleador', 'empleado')),
-  creado_en timestamptz not null default now()
-);
-
--- Datos laborales de cada empleado (1 a 1 con un perfil de rol 'empleado')
-create table empleados (
-  id uuid primary key default gen_random_uuid(),
-  perfil_id uuid not null unique references perfiles(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  fecha_ingreso date not null,
-  tipo_turno text not null check (tipo_turno in ('fijo', 'rotativo')),
-  activo boolean not null default true
-);
-
--- Reglas de negocio configurables por organización (el "motor de reglas")
-create table reglas_organizacion (
-  organizacion_id uuid primary key references organizaciones(id) on delete cascade,
-  francos_por_semana int not null default 2,
-  requiere_aprobacion_franco boolean not null default true,
-  requiere_aprobacion_vacaciones boolean not null default true,
-  dias_aviso_previo_franco int not null default 2,
-  dias_aviso_previo_vacaciones int not null default 15,
-  actualizado_en timestamptz not null default now()
-);
-
--- Tramos de antigüedad -> días de vacaciones (también configurable por organización)
-create table regimen_vacaciones (
-  id uuid primary key default gen_random_uuid(),
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  antiguedad_minima_anios int not null,
-  antiguedad_maxima_anios int, -- null = sin tope superior
-  dias_vacaciones int not null
-);
-
--- Horarios asignados a cada empleado
-create table horarios (
-  id uuid primary key default gen_random_uuid(),
-  empleado_id uuid not null references empleados(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  dia_semana int not null check (dia_semana between 0 and 6), -- 0 = domingo
-  hora_inicio time not null,
-  hora_fin time not null
-);
-
--- Fichajes (marcaciones reales de entrada/salida) - insumo del módulo de estadísticas
-create table fichajes (
-  id uuid primary key default gen_random_uuid(),
-  empleado_id uuid not null references empleados(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  fecha date not null,
-  hora_entrada time,
-  hora_salida time
-);
-
--- Solicitudes de franco
-create table solicitudes_franco (
-  id uuid primary key default gen_random_uuid(),
-  empleado_id uuid not null references empleados(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  fecha date not null,
-  estado text not null default 'pendiente' check (estado in ('pendiente', 'aprobado', 'rechazado')),
-  motivo_rechazo text,
-  creado_en timestamptz not null default now()
-);
-
--- Solicitudes de vacaciones
-create table solicitudes_vacaciones (
-  id uuid primary key default gen_random_uuid(),
-  empleado_id uuid not null references empleados(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  fecha_inicio date not null,
-  fecha_fin date not null,
-  estado text not null default 'pendiente' check (estado in ('pendiente', 'aprobado', 'rechazado')),
-  motivo_rechazo text,
-  creado_en timestamptz not null default now()
-);
-
--- Pagos de sueldo (módulo de sueldos: sin cálculo de liquidación, solo registro y recibo)
-create table pagos_sueldo (
-  id uuid primary key default gen_random_uuid(),
-  empleado_id uuid not null references empleados(id) on delete cascade,
-  organizacion_id uuid not null references organizaciones(id) on delete cascade,
-  periodo text not null, -- formato 'YYYY-MM', ej '2026-08'
-  monto numeric(12, 2) not null,
-  estado text not null default 'pendiente' check (estado in ('pendiente', 'acreditado')),
-  fecha_pago date,
-  recibo_path text, -- ruta del archivo en Supabase Storage
-  creado_en timestamptz not null default now(),
-  unique (empleado_id, periodo)
-);
-
--- ============================================================================
--- 2. FUNCIONES DE ALTA (registro de empleador y de empleado)
+-- HR Manager - Esquema para Supabase
+-- Adaptación de database/schema.sql para ejecutarse en el SQL Editor de Supabase.
+--
+-- Cambios respecto del esquema original:
+--   * Las tablas se crean en el esquema public, el único que Supabase expone
+--     por defecto a la aplicación.
+--   * user_accounts se vincula con auth.users (Supabase Auth). Se elimina
+--     password_hash: las contraseñas las administra Supabase (RNF-04).
+--   * user_accounts suma display_name, el nombre que se muestra en el menú
+--     (el empleador no siempre tiene una ficha de empleado).
+--   * Se agregan los campos que pide el SRS: must_change_password (RF-03),
+--     requires_days_off_approval y requires_vacation_approval (RF-30) y
+--     payment_type en payroll_records (RF-24).
+--   * Seguridad a nivel de fila (RLS) en todas las tablas (RNF-02).
+--   * Funciones del motor de reglas de negocio (RNF-14).
+--   * Bucket privado para los recibos de sueldo en PDF de 5 MB (RF-24, RNF-06).
+--
+-- Ejecutar completo, una sola vez, sobre un proyecto vacío.
 -- ============================================================================
 
--- Un usuario nuevo que se registra como EMPLEADOR crea una organización nueva
-create or replace function registrar_empleador(p_nombre_organizacion text, p_nombre_completo text)
-returns organizaciones
-language plpgsql
-security definer
-as $$
-declare
-  v_org organizaciones;
-  v_codigo text;
-begin
-  v_codigo := upper(substr(md5(random()::text), 1, 6));
 
-  insert into organizaciones (nombre, codigo_invitacion)
-  values (p_nombre_organizacion, v_codigo)
-  returning * into v_org;
+-- ============================================================================
+-- 1. TABLAS
+-- ============================================================================
 
-  insert into perfiles (id, organizacion_id, nombre_completo, rol)
-  values (auth.uid(), v_org.id, p_nombre_completo, 'empleador');
+CREATE TABLE public.companies (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  legal_name VARCHAR(200) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-  insert into reglas_organizacion (organizacion_id)
-  values (v_org.id);
+CREATE TABLE public.departments (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  name VARCHAR(120) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, name)
+);
 
-  -- Régimen de vacaciones por defecto, basado en la Ley de Contrato de Trabajo argentina
-  insert into regimen_vacaciones (organizacion_id, antiguedad_minima_anios, antiguedad_maxima_anios, dias_vacaciones)
-  values
-    (v_org.id, 0, 4, 14),
-    (v_org.id, 5, 9, 21),
-    (v_org.id, 10, 19, 28),
-    (v_org.id, 20, null, 35);
+CREATE TABLE public.branches (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  name VARCHAR(120) NOT NULL,
+  address VARCHAR(250),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, name)
+);
 
-  return v_org;
-end;
+CREATE TABLE public.job_positions (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  name VARCHAR(120) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, name)
+);
+
+CREATE TABLE public.employees (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_number VARCHAR(32) NOT NULL,
+  full_name VARCHAR(160) NOT NULL,
+  email VARCHAR(254) NOT NULL,
+  cuil VARCHAR(11) NOT NULL CHECK (cuil ~ '^[0-9]{11}$'),
+  department_id BIGINT NOT NULL,
+  branch_id BIGINT NOT NULL,
+  job_position_id BIGINT NOT NULL,
+  collective_agreement VARCHAR(200),
+  birth_date DATE NOT NULL,
+  hire_date DATE NOT NULL,
+  employment_status VARCHAR(20) NOT NULL DEFAULT 'active'
+    CHECK (employment_status IN ('active', 'on_leave', 'inactive')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, employee_number),
+  UNIQUE (company_id, cuil),
+  CHECK (hire_date >= birth_date),
+  FOREIGN KEY (company_id, department_id)
+    REFERENCES public.departments(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, branch_id)
+    REFERENCES public.branches(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, job_position_id)
+    REFERENCES public.job_positions(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE UNIQUE INDEX employees_company_email_lower_uq
+  ON public.employees (company_id, LOWER(email));
+
+-- Cuenta de acceso: una fila por cada usuario de Supabase Auth.
+-- La contraseña vive en auth.users y la administra Supabase.
+CREATE TABLE public.user_accounts (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  auth_user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT,
+  email VARCHAR(254) NOT NULL,
+  display_name VARCHAR(160),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('employer', 'employee')),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  profile_photo_storage_key TEXT,
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, employee_id),
+  CHECK (role <> 'employee' OR employee_id IS NOT NULL),
+  FOREIGN KEY (company_id, employee_id)
+    REFERENCES public.employees(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE UNIQUE INDEX user_accounts_email_lower_uq
+  ON public.user_accounts (LOWER(email));
+
+CREATE TABLE public.shift_types (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  code VARCHAR(60) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  starts_at TIME NOT NULL,
+  ends_at TIME NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, code),
+  CHECK (starts_at <> ends_at)
+);
+
+CREATE UNIQUE INDEX shift_types_company_name_lower_uq
+  ON public.shift_types (company_id, LOWER(name));
+
+CREATE TABLE public.business_rules (
+  company_id BIGINT PRIMARY KEY REFERENCES public.companies(id) ON DELETE RESTRICT,
+  weekly_days_off SMALLINT NOT NULL DEFAULT 2
+    CHECK (weekly_days_off BETWEEN 0 AND 7),
+  days_off_notice SMALLINT NOT NULL DEFAULT 2
+    CHECK (days_off_notice >= 0),
+  vacation_notice SMALLINT NOT NULL DEFAULT 15
+    CHECK (vacation_notice >= 0),
+  requires_days_off_approval BOOLEAN NOT NULL DEFAULT TRUE,
+  requires_vacation_approval BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by_user_id BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (company_id, updated_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE TABLE public.vacation_entitlement_ranges (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  seniority_years_from INTEGER NOT NULL CHECK (seniority_years_from >= 0),
+  seniority_years_to INTEGER,
+  entitlement_days SMALLINT NOT NULL CHECK (entitlement_days > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, seniority_years_from),
+  CHECK (
+    seniority_years_to IS NULL
+    OR seniority_years_to >= seniority_years_from
+  )
+);
+
+CREATE UNIQUE INDEX vacation_entitlement_one_open_range_uq
+  ON public.vacation_entitlement_ranges (company_id)
+  WHERE seniority_years_to IS NULL;
+
+CREATE TABLE public.work_schedules (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT NOT NULL,
+  week_start_date DATE NOT NULL,
+  shift_type_id BIGINT NOT NULL,
+  shift_name_snapshot VARCHAR(100) NOT NULL,
+  starts_at_snapshot TIME NOT NULL,
+  ends_at_snapshot TIME NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'confirmed'
+    CHECK (status IN ('confirmed', 'cancelled')),
+  created_by_user_id BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, employee_id, week_start_date),
+  UNIQUE (company_id, id),
+  CHECK (EXTRACT(ISODOW FROM week_start_date) = 1),
+  CHECK (starts_at_snapshot <> ends_at_snapshot),
+  FOREIGN KEY (company_id, employee_id)
+    REFERENCES public.employees(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, shift_type_id)
+    REFERENCES public.shift_types(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, created_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE INDEX work_schedules_employee_week_idx
+  ON public.work_schedules (company_id, employee_id, week_start_date);
+
+CREATE TABLE public.attendance_records (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT NOT NULL,
+  work_schedule_id BIGINT,
+  work_date DATE NOT NULL,
+  clock_in_at TIMESTAMPTZ,
+  clock_out_at TIMESTAMPTZ,
+  status VARCHAR(20) NOT NULL
+    CHECK (status IN ('present', 'late', 'absent', 'excused')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, employee_id, work_date),
+  FOREIGN KEY (company_id, employee_id)
+    REFERENCES public.employees(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, work_schedule_id)
+    REFERENCES public.work_schedules(company_id, id) ON DELETE RESTRICT,
+  CHECK (
+    clock_in_at IS NULL
+    OR clock_out_at IS NULL
+    OR clock_out_at >= clock_in_at
+  ),
+  CHECK (status = 'absent' OR clock_in_at IS NOT NULL)
+);
+
+CREATE TABLE public.days_off_requests (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT NOT NULL,
+  submitted_by_user_id BIGINT NOT NULL,
+  request_type VARCHAR(24) NOT NULL
+    CHECK (request_type IN ('individual', 'grouped', 'employer_assignment')),
+  category VARCHAR(24) NOT NULL DEFAULT 'ordinary'
+    CHECK (category IN ('ordinary', 'compensatory', 'legal', 'other')),
+  reason TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  resolution_note TEXT,
+  resolved_by_user_id BIGINT,
+  resolved_at TIMESTAMPTZ,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  FOREIGN KEY (company_id, employee_id)
+    REFERENCES public.employees(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, submitted_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, resolved_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE INDEX days_off_requests_employee_status_idx
+  ON public.days_off_requests (company_id, employee_id, status, submitted_at DESC);
+
+CREATE TABLE public.days_off_request_dates (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL,
+  request_id BIGINT NOT NULL,
+  requested_date DATE NOT NULL,
+  notice_days SMALLINT CHECK (notice_days >= 0),
+  is_taken BOOLEAN NOT NULL DEFAULT FALSE,
+  taken_at TIMESTAMPTZ,
+  UNIQUE (request_id, requested_date),
+  FOREIGN KEY (company_id, request_id)
+    REFERENCES public.days_off_requests(company_id, id) ON DELETE CASCADE,
+  CHECK (NOT is_taken OR taken_at IS NOT NULL)
+);
+
+CREATE INDEX days_off_request_dates_date_idx
+  ON public.days_off_request_dates (company_id, requested_date);
+
+CREATE TABLE public.vacation_periods (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT NOT NULL,
+  period_code VARCHAR(20) NOT NULL,
+  starts_on DATE NOT NULL,
+  ends_on DATE NOT NULL,
+  entitled_days SMALLINT NOT NULL CHECK (entitled_days >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, employee_id, period_code),
+  UNIQUE (company_id, employee_id, id),
+  CHECK (ends_on >= starts_on),
+  FOREIGN KEY (company_id, employee_id)
+    REFERENCES public.employees(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE TABLE public.vacation_requests (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT NOT NULL,
+  vacation_period_id BIGINT NOT NULL,
+  submitted_by_user_id BIGINT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  requested_days SMALLINT NOT NULL CHECK (requested_days > 0),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  resolution_note TEXT,
+  resolved_by_user_id BIGINT,
+  resolved_at TIMESTAMPTZ,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, id),
+  CHECK (end_date >= start_date),
+  FOREIGN KEY (company_id, employee_id, vacation_period_id)
+    REFERENCES public.vacation_periods(company_id, employee_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, submitted_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, resolved_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE INDEX vacation_requests_employee_period_status_idx
+  ON public.vacation_requests (company_id, employee_id, vacation_period_id, status);
+
+CREATE TABLE public.payroll_periods (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  starts_on DATE NOT NULL,
+  legal_due_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, starts_on),
+  UNIQUE (company_id, id),
+  CHECK (EXTRACT(DAY FROM starts_on) = 1)
+);
+
+-- payment_type permite registrar en el mismo período el sueldo y una cuota
+-- de aguinaldo, por eso forma parte de la restricción de unicidad.
+CREATE TABLE public.payroll_records (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+  employee_id BIGINT NOT NULL,
+  payroll_period_id BIGINT NOT NULL,
+  payment_type VARCHAR(30) NOT NULL DEFAULT 'salary'
+    CHECK (payment_type IN ('salary', 'aguinaldo_first_installment', 'aguinaldo_second_installment')),
+  net_amount NUMERIC(14, 2) CHECK (net_amount IS NULL OR net_amount > 0),
+  payment_date DATE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'paid', 'cancelled')),
+  receipt_original_file_name VARCHAR(255),
+  receipt_storage_key TEXT UNIQUE,
+  receipt_content_type VARCHAR(100),
+  receipt_size_bytes BIGINT CHECK (receipt_size_bytes IS NULL OR receipt_size_bytes <= 5242880),
+  receipt_uploaded_at TIMESTAMPTZ,
+  receipt_uploaded_by_user_id BIGINT,
+  created_by_user_id BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, employee_id, payroll_period_id, payment_type),
+  UNIQUE (company_id, id),
+  CHECK (
+    status <> 'paid'
+    OR (
+      net_amount IS NOT NULL
+      AND payment_date IS NOT NULL
+      AND receipt_original_file_name IS NOT NULL
+      AND receipt_storage_key IS NOT NULL
+      AND receipt_content_type IS NOT NULL
+      AND receipt_content_type = 'application/pdf'
+      AND receipt_size_bytes IS NOT NULL
+      AND receipt_size_bytes > 0
+      AND receipt_uploaded_at IS NOT NULL
+      AND receipt_uploaded_by_user_id IS NOT NULL
+    )
+  ),
+  CHECK (
+    (
+      receipt_original_file_name IS NULL
+      AND receipt_storage_key IS NULL
+      AND receipt_content_type IS NULL
+      AND receipt_size_bytes IS NULL
+      AND receipt_uploaded_at IS NULL
+      AND receipt_uploaded_by_user_id IS NULL
+    )
+    OR (
+      receipt_original_file_name IS NOT NULL
+      AND receipt_storage_key IS NOT NULL
+      AND receipt_content_type IS NOT NULL
+      AND receipt_content_type = 'application/pdf'
+      AND receipt_size_bytes IS NOT NULL
+      AND receipt_size_bytes > 0
+      AND receipt_uploaded_at IS NOT NULL
+      AND receipt_uploaded_by_user_id IS NOT NULL
+    )
+  ),
+  FOREIGN KEY (company_id, employee_id)
+    REFERENCES public.employees(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, payroll_period_id)
+    REFERENCES public.payroll_periods(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, created_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (company_id, receipt_uploaded_by_user_id)
+    REFERENCES public.user_accounts(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE INDEX payroll_records_period_status_idx
+  ON public.payroll_records (company_id, payroll_period_id, status);
+
+
+-- ============================================================================
+-- 2. ACTUALIZACIÓN AUTOMÁTICA DE updated_at
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.updated_at := CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
 $$;
 
--- Un usuario nuevo que se registra como EMPLEADO se une a una organización existente
--- usando el código de invitación que le pasó su empleador
-create or replace function registrar_empleado(
-  p_codigo_invitacion text,
-  p_nombre_completo text,
-  p_fecha_ingreso date,
-  p_tipo_turno text
+CREATE TRIGGER companies_set_updated_at BEFORE UPDATE ON public.companies
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER employees_set_updated_at BEFORE UPDATE ON public.employees
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER user_accounts_set_updated_at BEFORE UPDATE ON public.user_accounts
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER shift_types_set_updated_at BEFORE UPDATE ON public.shift_types
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER business_rules_set_updated_at BEFORE UPDATE ON public.business_rules
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER work_schedules_set_updated_at BEFORE UPDATE ON public.work_schedules
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER attendance_records_set_updated_at BEFORE UPDATE ON public.attendance_records
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER days_off_requests_set_updated_at BEFORE UPDATE ON public.days_off_requests
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER vacation_requests_set_updated_at BEFORE UPDATE ON public.vacation_requests
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER payroll_records_set_updated_at BEFORE UPDATE ON public.payroll_records
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+-- ============================================================================
+-- 3. FUNCIONES AUXILIARES DE SEGURIDAD
+-- ============================================================================
+-- Viven en un esquema privado que Supabase no expone a la aplicación.
+-- Las usan las políticas RLS para saber a qué empresa y con qué rol
+-- pertenece el usuario que hace la consulta.
+
+CREATE SCHEMA IF NOT EXISTS private;
+GRANT USAGE ON SCHEMA private TO authenticated;
+
+CREATE OR REPLACE FUNCTION private.current_account()
+RETURNS public.user_accounts
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT ua.*
+  FROM public.user_accounts ua
+  WHERE ua.auth_user_id = auth.uid() AND ua.is_active
+$$;
+
+CREATE OR REPLACE FUNCTION private.current_company_id()
+RETURNS BIGINT
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$ SELECT (private.current_account()).company_id $$;
+
+CREATE OR REPLACE FUNCTION private.current_account_id()
+RETURNS BIGINT
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$ SELECT (private.current_account()).id $$;
+
+CREATE OR REPLACE FUNCTION private.current_employee_id()
+RETURNS BIGINT
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$ SELECT (private.current_account()).employee_id $$;
+
+CREATE OR REPLACE FUNCTION private.is_employer()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$ SELECT COALESCE((private.current_account()).role = 'employer', FALSE) $$;
+
+-- Fecha de hoy en la zona horaria de Argentina
+CREATE OR REPLACE FUNCTION private.today()
+RETURNS DATE
+LANGUAGE sql STABLE
+SET search_path = ''
+AS $$ SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date $$;
+
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private TO authenticated;
+
+
+-- ============================================================================
+-- 4. SEGURIDAD A NIVEL DE FILA (RLS)
+-- ============================================================================
+-- Regla general: cada usuario solo ve los datos de su empresa. El empleador
+-- administra los datos de su empresa y el empleado solo ve los propios.
+-- El rol anon no tiene ninguna política, así que no ve nada.
+
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_positions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shift_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.business_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vacation_entitlement_ranges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.work_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.days_off_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.days_off_request_dates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vacation_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vacation_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payroll_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payroll_records ENABLE ROW LEVEL SECURITY;
+
+-- Empresa: lectura de la propia
+CREATE POLICY "members read own company" ON public.companies
+  FOR SELECT TO authenticated
+  USING (id = private.current_company_id());
+
+CREATE POLICY "employer updates own company" ON public.companies
+  FOR UPDATE TO authenticated
+  USING (id = private.current_company_id() AND private.is_employer())
+  WITH CHECK (id = private.current_company_id());
+
+-- Catálogos de la empresa: todos leen, el empleador administra
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'departments', 'branches', 'job_positions', 'shift_types',
+    'vacation_entitlement_ranges', 'payroll_periods'
+  ] LOOP
+    EXECUTE format(
+      'CREATE POLICY "members read" ON public.%I FOR SELECT TO authenticated
+         USING (company_id = private.current_company_id())', t);
+    EXECUTE format(
+      'CREATE POLICY "employer manages" ON public.%I FOR ALL TO authenticated
+         USING (company_id = private.current_company_id() AND private.is_employer())
+         WITH CHECK (company_id = private.current_company_id() AND private.is_employer())', t);
+  END LOOP;
+END;
+$$;
+
+-- Reglas de negocio: todos leen, el empleador modifica (RF-30 a RF-32)
+CREATE POLICY "members read rules" ON public.business_rules
+  FOR SELECT TO authenticated
+  USING (company_id = private.current_company_id());
+
+CREATE POLICY "employer updates rules" ON public.business_rules
+  FOR UPDATE TO authenticated
+  USING (company_id = private.current_company_id() AND private.is_employer())
+  WITH CHECK (company_id = private.current_company_id());
+
+-- Empleados: el empleador administra los de su empresa; el empleado se ve a sí mismo
+CREATE POLICY "employer manages employees" ON public.employees
+  FOR ALL TO authenticated
+  USING (company_id = private.current_company_id() AND private.is_employer())
+  WITH CHECK (company_id = private.current_company_id() AND private.is_employer());
+
+CREATE POLICY "employee reads self" ON public.employees
+  FOR SELECT TO authenticated
+  USING (id = private.current_employee_id());
+
+-- Cuentas: cada uno ve la suya; el empleador ve y activa o desactiva las de su empresa.
+-- Las cuentas nuevas no se crean desde el navegador: las crea una función de
+-- servidor con la clave de servicio (RF-07, RNF-08).
+CREATE POLICY "user reads own account" ON public.user_accounts
+  FOR SELECT TO authenticated
+  USING (auth_user_id = auth.uid());
+
+CREATE POLICY "employer reads company accounts" ON public.user_accounts
+  FOR SELECT TO authenticated
+  USING (company_id = private.current_company_id() AND private.is_employer());
+
+CREATE POLICY "employer updates company accounts" ON public.user_accounts
+  FOR UPDATE TO authenticated
+  USING (company_id = private.current_company_id() AND private.is_employer())
+  WITH CHECK (company_id = private.current_company_id());
+
+-- Tablas operativas del empleado: el empleador administra, el empleado ve lo propio
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'work_schedules', 'attendance_records', 'days_off_requests',
+    'vacation_periods', 'vacation_requests', 'payroll_records'
+  ] LOOP
+    EXECUTE format(
+      'CREATE POLICY "employer manages" ON public.%I FOR ALL TO authenticated
+         USING (company_id = private.current_company_id() AND private.is_employer())
+         WITH CHECK (company_id = private.current_company_id() AND private.is_employer())', t);
+    EXECUTE format(
+      'CREATE POLICY "employee reads own" ON public.%I FOR SELECT TO authenticated
+         USING (company_id = private.current_company_id()
+                AND employee_id = private.current_employee_id())', t);
+  END LOOP;
+END;
+$$;
+
+-- Fechas de francos: se heredan los permisos de la solicitud
+CREATE POLICY "employer manages dates" ON public.days_off_request_dates
+  FOR ALL TO authenticated
+  USING (company_id = private.current_company_id() AND private.is_employer())
+  WITH CHECK (company_id = private.current_company_id() AND private.is_employer());
+
+CREATE POLICY "employee reads own dates" ON public.days_off_request_dates
+  FOR SELECT TO authenticated
+  USING (EXISTS (
+    SELECT 1 FROM public.days_off_requests r
+    WHERE r.id = request_id
+      AND r.employee_id = private.current_employee_id()
+  ));
+
+
+-- ============================================================================
+-- 5. MOTOR DE REGLAS DE NEGOCIO
+-- ============================================================================
+-- Las solicitudes del empleado se crean siempre a través de estas funciones,
+-- que validan contra las reglas de su empresa. Las reglas se leen al momento
+-- de cada solicitud, por lo que un cambio solo afecta a las futuras (RF-32).
+
+-- Días de vacaciones que corresponden según la antigüedad al 31 de diciembre
+-- del año indicado y los tramos configurados por la empresa (RF-18).
+CREATE OR REPLACE FUNCTION public.vacation_entitlement_days(p_employee_id BIGINT, p_year INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_emp public.employees;
+  v_years INTEGER;
+  v_days INTEGER;
+BEGIN
+  SELECT * INTO v_emp FROM public.employees WHERE id = p_employee_id;
+  IF v_emp.id IS NULL
+     OR v_emp.company_id IS DISTINCT FROM private.current_company_id()
+     OR (NOT private.is_employer() AND v_emp.id IS DISTINCT FROM private.current_employee_id()) THEN
+    RAISE EXCEPTION 'Empleado inexistente o sin permiso para consultarlo';
+  END IF;
+
+  v_years := EXTRACT(YEAR FROM age(make_date(p_year, 12, 31), v_emp.hire_date))::INTEGER;
+  IF v_years < 0 THEN RETURN 0; END IF;
+
+  SELECT r.entitlement_days INTO v_days
+  FROM public.vacation_entitlement_ranges r
+  WHERE r.company_id = v_emp.company_id
+    AND r.seniority_years_from <= v_years
+    AND (r.seniority_years_to IS NULL OR r.seniority_years_to >= v_years)
+  ORDER BY r.seniority_years_from DESC
+  LIMIT 1;
+
+  RETURN COALESCE(v_days, 0);
+END;
+$$;
+
+-- Devuelve el período de vacaciones del año, creándolo si no existe
+CREATE OR REPLACE FUNCTION private.ensure_vacation_period(p_employee_id BIGINT, p_year INTEGER)
+RETURNS public.vacation_periods
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_period public.vacation_periods;
+  v_company BIGINT;
+BEGIN
+  SELECT company_id INTO v_company FROM public.employees WHERE id = p_employee_id;
+
+  SELECT * INTO v_period FROM public.vacation_periods
+  WHERE company_id = v_company AND employee_id = p_employee_id AND period_code = p_year::TEXT;
+
+  IF v_period.id IS NULL THEN
+    INSERT INTO public.vacation_periods (company_id, employee_id, period_code, starts_on, ends_on, entitled_days)
+    VALUES (v_company, p_employee_id, p_year::TEXT, make_date(p_year, 1, 1), make_date(p_year, 12, 31),
+            public.vacation_entitlement_days(p_employee_id, p_year))
+    RETURNING * INTO v_period;
+  END IF;
+
+  RETURN v_period;
+END;
+$$;
+
+-- Resumen de vacaciones de un año: días que corresponden, usados y disponibles
+CREATE OR REPLACE FUNCTION public.vacation_balance(p_employee_id BIGINT, p_year INTEGER)
+RETURNS TABLE (entitled_days INTEGER, used_days INTEGER, available_days INTEGER)
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_period public.vacation_periods;
+  v_used INTEGER;
+BEGIN
+  v_period := private.ensure_vacation_period(p_employee_id, p_year);
+  SELECT COALESCE(SUM(requested_days), 0) INTO v_used
+  FROM public.vacation_requests
+  WHERE vacation_period_id = v_period.id AND status IN ('pending', 'approved');
+  RETURN QUERY SELECT v_period.entitled_days::INTEGER, v_used, (v_period.entitled_days - v_used)::INTEGER;
+END;
+$$;
+
+-- Solicitud de franco del empleado (RF-13 a RF-15).
+-- Valida aviso previo y cantidad de francos por semana.
+CREATE OR REPLACE FUNCTION public.submit_days_off_request(
+  p_dates DATE[],
+  p_reason TEXT,
+  p_category VARCHAR DEFAULT 'ordinary'
 )
-returns empleados
-language plpgsql
-security definer
-as $$
-declare
-  v_org_id uuid;
-  v_empleado empleados;
-begin
-  select id into v_org_id
-  from organizaciones
-  where codigo_invitacion = upper(p_codigo_invitacion);
+RETURNS public.days_off_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts;
+  v_rules public.business_rules;
+  v_req public.days_off_requests;
+  v_date DATE;
+  v_week_count INTEGER;
+  v_new_in_week INTEGER;
+BEGIN
+  v_acc := private.current_account();
+  IF v_acc.id IS NULL OR v_acc.role <> 'employee' THEN
+    RAISE EXCEPTION 'Solo un empleado activo puede solicitar francos';
+  END IF;
+  IF p_dates IS NULL OR array_length(p_dates, 1) IS NULL THEN
+    RAISE EXCEPTION 'Indicá al menos una fecha';
+  END IF;
+  IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+    RAISE EXCEPTION 'Indicá el motivo de la solicitud';
+  END IF;
 
-  if v_org_id is null then
-    raise exception 'El código de organización ingresado no es válido';
-  end if;
+  SELECT * INTO v_rules FROM public.business_rules WHERE company_id = v_acc.company_id;
 
-  insert into perfiles (id, organizacion_id, nombre_completo, rol)
-  values (auth.uid(), v_org_id, p_nombre_completo, 'empleado');
+  FOREACH v_date IN ARRAY p_dates LOOP
+    IF v_date - private.today() < v_rules.days_off_notice THEN
+      RAISE EXCEPTION 'La fecha % no respeta el aviso previo de % días. La fecha mínima es %.',
+        to_char(v_date, 'DD/MM/YYYY'), v_rules.days_off_notice,
+        to_char(private.today() + v_rules.days_off_notice, 'DD/MM/YYYY');
+    END IF;
 
-  insert into empleados (perfil_id, organizacion_id, fecha_ingreso, tipo_turno)
-  values (auth.uid(), v_org_id, p_fecha_ingreso, p_tipo_turno)
-  returning * into v_empleado;
+    IF EXISTS (
+      SELECT 1 FROM public.days_off_request_dates d
+      JOIN public.days_off_requests r ON r.id = d.request_id
+      WHERE r.employee_id = v_acc.employee_id AND r.status IN ('pending', 'approved')
+        AND d.requested_date = v_date
+    ) THEN
+      RAISE EXCEPTION 'Ya tenés un franco solicitado o aprobado para el %', to_char(v_date, 'DD/MM/YYYY');
+    END IF;
 
-  return v_empleado;
-end;
+    SELECT count(*) INTO v_week_count
+    FROM public.days_off_request_dates d
+    JOIN public.days_off_requests r ON r.id = d.request_id
+    WHERE r.employee_id = v_acc.employee_id
+      AND r.status IN ('pending', 'approved')
+      AND date_trunc('week', d.requested_date) = date_trunc('week', v_date);
+
+    SELECT count(*) INTO v_new_in_week
+    FROM unnest(p_dates) x
+    WHERE date_trunc('week', x) = date_trunc('week', v_date);
+
+    IF v_week_count + v_new_in_week > v_rules.weekly_days_off THEN
+      RAISE EXCEPTION 'La semana del % supera el máximo de % francos por semana',
+        to_char(v_date, 'DD/MM/YYYY'), v_rules.weekly_days_off;
+    END IF;
+  END LOOP;
+
+  INSERT INTO public.days_off_requests (
+    company_id, employee_id, submitted_by_user_id, request_type, category, reason,
+    status, resolution_note, resolved_at
+  ) VALUES (
+    v_acc.company_id, v_acc.employee_id, v_acc.id,
+    CASE WHEN array_length(p_dates, 1) = 1 THEN 'individual' ELSE 'grouped' END,
+    p_category, p_reason,
+    CASE WHEN v_rules.requires_days_off_approval THEN 'pending' ELSE 'approved' END,
+    CASE WHEN v_rules.requires_days_off_approval THEN NULL ELSE 'Aprobación automática' END,
+    CASE WHEN v_rules.requires_days_off_approval THEN NULL ELSE CURRENT_TIMESTAMP END
+  ) RETURNING * INTO v_req;
+
+  INSERT INTO public.days_off_request_dates (company_id, request_id, requested_date, notice_days)
+  SELECT v_acc.company_id, v_req.id, d, (d - private.today())::SMALLINT
+  FROM unnest(p_dates) AS d;
+
+  RETURN v_req;
+END;
 $$;
 
--- ============================================================================
--- 3. MOTOR DE REGLAS DE NEGOCIO
--- ============================================================================
--- Estas funciones son el corazón del proyecto: validan cada solicitud contra
--- la configuración propia de CADA organización (tabla reglas_organizacion y
--- regimen_vacaciones), en lugar de tener las reglas fijas en el código.
+-- Asignación directa de francos por parte del empleador (CU-23)
+CREATE OR REPLACE FUNCTION public.assign_days_off(
+  p_employee_id BIGINT,
+  p_dates DATE[],
+  p_reason TEXT,
+  p_category VARCHAR DEFAULT 'ordinary'
+)
+RETURNS public.days_off_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts;
+  v_req public.days_off_requests;
+BEGIN
+  v_acc := private.current_account();
+  IF v_acc.id IS NULL OR v_acc.role <> 'employer' THEN
+    RAISE EXCEPTION 'Solo el empleador puede asignar francos';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.employees
+                 WHERE id = p_employee_id AND company_id = v_acc.company_id) THEN
+    RAISE EXCEPTION 'El empleado no pertenece a tu organización';
+  END IF;
+  IF p_dates IS NULL OR array_length(p_dates, 1) IS NULL THEN
+    RAISE EXCEPTION 'Indicá al menos una fecha';
+  END IF;
+  IF EXISTS (SELECT 1 FROM unnest(p_dates) d WHERE d < private.today()) THEN
+    RAISE EXCEPTION 'No se pueden asignar francos en días que ya pasaron';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.days_off_request_dates d
+    JOIN public.days_off_requests r ON r.id = d.request_id
+    WHERE r.employee_id = p_employee_id AND r.status IN ('pending', 'approved')
+      AND d.requested_date = ANY (p_dates)
+  ) THEN
+    RAISE EXCEPTION 'El empleado ya tiene un franco en alguna de esas fechas';
+  END IF;
 
--- Calcula cuántos días de vacaciones le corresponden a un empleado según su antigüedad
-create or replace function calcular_dias_vacaciones(p_empleado_id uuid)
-returns int
-language plpgsql
-security definer
-as $$
-declare
-  v_organizacion_id uuid;
-  v_fecha_ingreso date;
-  v_antiguedad_anios int;
-  v_dias int;
-begin
-  select organizacion_id, fecha_ingreso into v_organizacion_id, v_fecha_ingreso
-  from empleados where id = p_empleado_id;
+  INSERT INTO public.days_off_requests (
+    company_id, employee_id, submitted_by_user_id, request_type, category, reason,
+    status, resolved_by_user_id, resolved_at
+  ) VALUES (
+    v_acc.company_id, p_employee_id, v_acc.id, 'employer_assignment', p_category, p_reason,
+    'approved', v_acc.id, CURRENT_TIMESTAMP
+  ) RETURNING * INTO v_req;
 
-  v_antiguedad_anios := extract(year from age(current_date, v_fecha_ingreso));
+  INSERT INTO public.days_off_request_dates (company_id, request_id, requested_date)
+  SELECT v_acc.company_id, v_req.id, d FROM unnest(p_dates) AS d;
 
-  select dias_vacaciones into v_dias
-  from regimen_vacaciones
-  where organizacion_id = v_organizacion_id
-    and antiguedad_minima_anios <= v_antiguedad_anios
-    and (antiguedad_maxima_anios is null or antiguedad_maxima_anios >= v_antiguedad_anios)
-  order by antiguedad_minima_anios desc
-  limit 1;
-
-  return coalesce(v_dias, 0);
-end;
+  RETURN v_req;
+END;
 $$;
 
--- Valida y crea una solicitud de franco respetando los días de aviso configurados
-create or replace function solicitar_franco(p_empleado_id uuid, p_fecha date)
-returns solicitudes_franco
-language plpgsql
-security definer
-as $$
-declare
-  v_organizacion_id uuid;
-  v_reglas reglas_organizacion;
-  v_nueva solicitudes_franco;
-begin
-  select organizacion_id into v_organizacion_id from empleados where id = p_empleado_id;
-  select * into v_reglas from reglas_organizacion where organizacion_id = v_organizacion_id;
+-- Validación y registro de un período de vacaciones, compartido por la
+-- solicitud del empleado y la asignación directa del empleador.
+-- Los días se cuentan corridos. El período devengado es, por defecto, el año
+-- de la fecha de inicio.
+CREATE OR REPLACE FUNCTION private.register_vacation(
+  p_acc public.user_accounts,
+  p_employee_id BIGINT,
+  p_start DATE,
+  p_end DATE,
+  p_period_year INTEGER,
+  p_check_notice BOOLEAN,
+  p_force_approved BOOLEAN
+)
+RETURNS public.vacation_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_rules public.business_rules;
+  v_period public.vacation_periods;
+  v_days INTEGER;
+  v_used INTEGER;
+  v_overlap INTEGER;
+  v_approved BOOLEAN;
+  v_req public.vacation_requests;
+BEGIN
+  IF p_start IS NULL OR p_end IS NULL OR p_end < p_start THEN
+    RAISE EXCEPTION 'La fecha de fin no puede ser anterior a la de inicio';
+  END IF;
 
-  if (p_fecha - current_date) < v_reglas.dias_aviso_previo_franco then
-    raise exception 'Debe solicitar el franco con al menos % día(s) de anticipación', v_reglas.dias_aviso_previo_franco;
-  end if;
+  SELECT * INTO v_rules FROM public.business_rules WHERE company_id = p_acc.company_id;
 
-  insert into solicitudes_franco (empleado_id, organizacion_id, fecha, estado)
-  values (
-    p_empleado_id, v_organizacion_id, p_fecha,
-    case when v_reglas.requiere_aprobacion_franco then 'pendiente' else 'aprobado' end
+  IF p_check_notice AND p_start - private.today() < v_rules.vacation_notice THEN
+    RAISE EXCEPTION 'La fecha de inicio no respeta el aviso previo de % días. La fecha mínima es %.',
+      v_rules.vacation_notice, to_char(private.today() + v_rules.vacation_notice, 'DD/MM/YYYY');
+  END IF;
+  IF NOT p_check_notice AND p_start < private.today() THEN
+    RAISE EXCEPTION 'No se pueden registrar vacaciones que empiezan en una fecha pasada';
+  END IF;
+
+  SELECT count(*) INTO v_overlap FROM public.vacation_requests
+  WHERE employee_id = p_employee_id AND status IN ('pending', 'approved')
+    AND start_date <= p_end AND end_date >= p_start;
+  IF v_overlap > 0 THEN
+    RAISE EXCEPTION 'Ya hay vacaciones solicitadas o aprobadas que se superponen con esas fechas';
+  END IF;
+
+  v_period := private.ensure_vacation_period(p_employee_id, COALESCE(p_period_year, EXTRACT(YEAR FROM p_start)::INTEGER));
+  v_days := p_end - p_start + 1;
+
+  SELECT COALESCE(SUM(requested_days), 0) INTO v_used
+  FROM public.vacation_requests
+  WHERE vacation_period_id = v_period.id AND status IN ('pending', 'approved');
+
+  IF v_used + v_days > v_period.entitled_days THEN
+    RAISE EXCEPTION 'Se solicitaron % días y quedan % disponibles en el período %',
+      v_days, v_period.entitled_days - v_used, v_period.period_code;
+  END IF;
+
+  v_approved := p_force_approved OR NOT v_rules.requires_vacation_approval;
+
+  INSERT INTO public.vacation_requests (
+    company_id, employee_id, vacation_period_id, submitted_by_user_id,
+    start_date, end_date, requested_days, status, resolution_note, resolved_by_user_id, resolved_at
+  ) VALUES (
+    p_acc.company_id, p_employee_id, v_period.id, p_acc.id,
+    p_start, p_end, v_days,
+    CASE WHEN v_approved THEN 'approved' ELSE 'pending' END,
+    CASE WHEN p_force_approved THEN 'Asignadas por el empleador'
+         WHEN v_approved THEN 'Aprobación automática' END,
+    CASE WHEN p_force_approved THEN p_acc.id END,
+    CASE WHEN v_approved THEN CURRENT_TIMESTAMP END
+  ) RETURNING * INTO v_req;
+
+  RETURN v_req;
+END;
+$$;
+
+-- Solicitud de vacaciones del empleado (RF-19 a RF-21).
+-- Valida aviso previo, superposición y días disponibles.
+CREATE OR REPLACE FUNCTION public.submit_vacation_request(p_start DATE, p_end DATE, p_period_year INTEGER DEFAULT NULL)
+RETURNS public.vacation_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employee' THEN
+    RAISE EXCEPTION 'Solo un empleado activo puede solicitar vacaciones';
+  END IF;
+  RETURN private.register_vacation(v_acc, v_acc.employee_id, p_start, p_end, p_period_year, TRUE, FALSE);
+END;
+$$;
+
+-- Asignación directa de vacaciones por parte del empleador (CU-20).
+-- No exige aviso previo, pero sí respeta los días disponibles.
+CREATE OR REPLACE FUNCTION public.assign_vacation(p_employee_id BIGINT, p_start DATE, p_end DATE, p_period_year INTEGER DEFAULT NULL)
+RETURNS public.vacation_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employer' THEN
+    RAISE EXCEPTION 'Solo el empleador puede asignar vacaciones';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.employees WHERE id = p_employee_id AND company_id = v_acc.company_id) THEN
+    RAISE EXCEPTION 'El empleado no pertenece a tu organización';
+  END IF;
+  RETURN private.register_vacation(v_acc, p_employee_id, p_start, p_end, p_period_year, FALSE, TRUE);
+END;
+$$;
+
+-- Respuesta del empleador a solicitudes pendientes (RF-16, RF-22)
+CREATE OR REPLACE FUNCTION public.resolve_days_off_request(p_request_id BIGINT, p_approve BOOLEAN, p_note TEXT DEFAULT NULL)
+RETURNS public.days_off_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+  v_req public.days_off_requests;
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employer' THEN
+    RAISE EXCEPTION 'Solo el empleador puede responder solicitudes';
+  END IF;
+  IF NOT p_approve AND (p_note IS NULL OR btrim(p_note) = '') THEN
+    RAISE EXCEPTION 'Indicá el motivo del rechazo';
+  END IF;
+  UPDATE public.days_off_requests
+     SET status = CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END,
+         resolution_note = p_note, resolved_by_user_id = v_acc.id, resolved_at = CURRENT_TIMESTAMP
+   WHERE id = p_request_id AND company_id = v_acc.company_id AND status = 'pending'
+  RETURNING * INTO v_req;
+  IF v_req.id IS NULL THEN
+    RAISE EXCEPTION 'La solicitud no existe o ya fue resuelta';
+  END IF;
+  RETURN v_req;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.resolve_vacation_request(p_request_id BIGINT, p_approve BOOLEAN, p_note TEXT DEFAULT NULL)
+RETURNS public.vacation_requests
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+  v_req public.vacation_requests;
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employer' THEN
+    RAISE EXCEPTION 'Solo el empleador puede responder solicitudes';
+  END IF;
+  IF NOT p_approve AND (p_note IS NULL OR btrim(p_note) = '') THEN
+    RAISE EXCEPTION 'Indicá el motivo del rechazo';
+  END IF;
+  UPDATE public.vacation_requests
+     SET status = CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END,
+         resolution_note = p_note, resolved_by_user_id = v_acc.id, resolved_at = CURRENT_TIMESTAMP
+   WHERE id = p_request_id AND company_id = v_acc.company_id AND status = 'pending'
+  RETURNING * INTO v_req;
+  IF v_req.id IS NULL THEN
+    RAISE EXCEPTION 'La solicitud no existe o ya fue resuelta';
+  END IF;
+  RETURN v_req;
+END;
+$$;
+
+-- Cancelación de una solicitud propia que todavía está pendiente
+CREATE OR REPLACE FUNCTION public.cancel_my_request(p_kind TEXT, p_request_id BIGINT)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_emp BIGINT := private.current_employee_id();
+  v_rows INTEGER;
+BEGIN
+  IF p_kind = 'days_off' THEN
+    UPDATE public.days_off_requests SET status = 'cancelled'
+     WHERE id = p_request_id AND employee_id = v_emp AND status = 'pending';
+  ELSIF p_kind = 'vacation' THEN
+    UPDATE public.vacation_requests SET status = 'cancelled'
+     WHERE id = p_request_id AND employee_id = v_emp AND status = 'pending';
+  ELSE
+    RAISE EXCEPTION 'Tipo de solicitud desconocido: %', p_kind;
+  END IF;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RAISE EXCEPTION 'La solicitud no existe, no es tuya o ya fue resuelta';
+  END IF;
+END;
+$$;
+
+-- Fichaje de entrada y salida del empleado. La hora la pone el servidor.
+CREATE OR REPLACE FUNCTION public.clock_in()
+RETURNS public.attendance_records
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+  v_sched public.work_schedules;
+  v_now_local TIME := (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::TIME;
+  v_rec public.attendance_records;
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employee' THEN
+    RAISE EXCEPTION 'Solo un empleado activo puede fichar';
+  END IF;
+
+  SELECT * INTO v_sched FROM public.work_schedules
+  WHERE employee_id = v_acc.employee_id
+    AND week_start_date = date_trunc('week', private.today())::DATE
+    AND status = 'confirmed';
+
+  INSERT INTO public.attendance_records (company_id, employee_id, work_schedule_id, work_date, clock_in_at, status)
+  VALUES (
+    v_acc.company_id, v_acc.employee_id, v_sched.id, private.today(), CURRENT_TIMESTAMP,
+    CASE WHEN v_sched.id IS NOT NULL AND v_now_local > v_sched.starts_at_snapshot + INTERVAL '10 minutes' THEN 'late' ELSE 'present' END
+  ) RETURNING * INTO v_rec;
+
+  RETURN v_rec;
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya registraste tu entrada de hoy';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.clock_out()
+RETURNS public.attendance_records
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_rec public.attendance_records;
+BEGIN
+  UPDATE public.attendance_records
+     SET clock_out_at = CURRENT_TIMESTAMP
+   WHERE employee_id = private.current_employee_id()
+     AND work_date = private.today()
+     AND clock_in_at IS NOT NULL
+     AND clock_out_at IS NULL
+  RETURNING * INTO v_rec;
+  IF v_rec.id IS NULL THEN
+    RAISE EXCEPTION 'No hay una entrada abierta para registrar la salida';
+  END IF;
+  RETURN v_rec;
+END;
+$$;
+
+-- El empleado marca que ya reemplazó su contraseña provisoria (RF-03)
+CREATE OR REPLACE FUNCTION public.mark_password_changed()
+RETURNS VOID
+LANGUAGE sql SECURITY DEFINER
+SET search_path = ''
+AS $$
+  UPDATE public.user_accounts
+     SET must_change_password = FALSE
+   WHERE auth_user_id = auth.uid();
+$$;
+
+-- Registro del último inicio de sesión
+CREATE OR REPLACE FUNCTION public.touch_last_login()
+RETURNS VOID
+LANGUAGE sql SECURITY DEFINER
+SET search_path = ''
+AS $$
+  UPDATE public.user_accounts
+     SET last_login_at = CURRENT_TIMESTAMP
+   WHERE auth_user_id = auth.uid();
+$$;
+
+-- Ninguna función queda disponible para usuarios sin sesión
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION
+  public.vacation_entitlement_days(BIGINT, INTEGER),
+  public.vacation_balance(BIGINT, INTEGER),
+  public.submit_days_off_request(DATE[], TEXT, VARCHAR),
+  public.assign_days_off(BIGINT, DATE[], TEXT, VARCHAR),
+  public.submit_vacation_request(DATE, DATE, INTEGER),
+  public.assign_vacation(BIGINT, DATE, DATE, INTEGER),
+  public.resolve_days_off_request(BIGINT, BOOLEAN, TEXT),
+  public.resolve_vacation_request(BIGINT, BOOLEAN, TEXT),
+  public.cancel_my_request(TEXT, BIGINT),
+  public.clock_in(),
+  public.clock_out(),
+  public.mark_password_changed(),
+  public.touch_last_login()
+TO authenticated;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private TO authenticated;
+
+
+-- ============================================================================
+-- 6. ALTA DE EMPRESAS (ADMINISTRADOR DEL SISTEMA, RF-01)
+-- ============================================================================
+-- Se ejecuta desde el SQL Editor de Supabase, nunca desde la aplicación.
+-- Crea la empresa, sus reglas por defecto, el régimen de vacaciones de la
+-- Ley de Contrato de Trabajo y la cuenta de su empleador.
+-- Antes hay que crear el usuario del empleador en Authentication > Users.
+
+CREATE OR REPLACE FUNCTION public.admin_create_company(
+  p_legal_name TEXT,
+  p_employer_email TEXT,
+  p_employer_name TEXT DEFAULT NULL
+)
+RETURNS BIGINT
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_company_id BIGINT;
+  v_auth_id UUID;
+BEGIN
+  SELECT id INTO v_auth_id FROM auth.users WHERE lower(email) = lower(p_employer_email);
+  IF v_auth_id IS NULL THEN
+    RAISE EXCEPTION 'Primero creá el usuario % en Authentication > Users', p_employer_email;
+  END IF;
+
+  INSERT INTO public.companies (legal_name) VALUES (p_legal_name) RETURNING id INTO v_company_id;
+
+  INSERT INTO public.business_rules (company_id) VALUES (v_company_id);
+
+  INSERT INTO public.vacation_entitlement_ranges (company_id, seniority_years_from, seniority_years_to, entitlement_days)
+  VALUES (v_company_id, 0, 4, 14), (v_company_id, 5, 9, 21), (v_company_id, 10, 19, 28), (v_company_id, 20, NULL, 35);
+
+  INSERT INTO public.user_accounts (auth_user_id, company_id, email, display_name, role)
+  VALUES (v_auth_id, v_company_id, lower(p_employer_email), p_employer_name, 'employer');
+
+  RETURN v_company_id;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.admin_create_company(TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+
+
+-- ============================================================================
+-- 6 BIS. ALTA DE EMPLEADOS (RF-02, RF-07)
+-- ============================================================================
+-- La llama únicamente la función de servidor create-employee, con la clave de
+-- servicio, después de crear el usuario en Supabase Auth. Crea en una sola
+-- transacción la ficha del empleado y su cuenta con contraseña provisoria.
+-- El área, la sucursal y el puesto se buscan por nombre y se crean si no existen.
+-- El legajo se asigna solo, como el siguiente número de la empresa.
+
+CREATE OR REPLACE FUNCTION public.admin_create_employee(
+  p_company_id BIGINT,
+  p_auth_user_id UUID,
+  p_full_name TEXT,
+  p_email TEXT,
+  p_cuil TEXT,
+  p_department TEXT,
+  p_branch TEXT,
+  p_job_position TEXT,
+  p_birth_date DATE,
+  p_hire_date DATE,
+  p_collective_agreement TEXT DEFAULT NULL
+)
+RETURNS public.employees
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_dep BIGINT; v_branch BIGINT; v_pos BIGINT;
+  v_number TEXT;
+  v_emp public.employees;
+BEGIN
+  INSERT INTO public.departments (company_id, name) VALUES (p_company_id, btrim(p_department))
+    ON CONFLICT (company_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO v_dep;
+  INSERT INTO public.branches (company_id, name) VALUES (p_company_id, btrim(p_branch))
+    ON CONFLICT (company_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO v_branch;
+  INSERT INTO public.job_positions (company_id, name) VALUES (p_company_id, btrim(p_job_position))
+    ON CONFLICT (company_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO v_pos;
+
+  SELECT (COALESCE(MAX(NULLIF(regexp_replace(employee_number, '\D', '', 'g'), '')::BIGINT), 0) + 1)::TEXT
+    INTO v_number FROM public.employees WHERE company_id = p_company_id;
+
+  INSERT INTO public.employees (company_id, employee_number, full_name, email, cuil,
+    department_id, branch_id, job_position_id, collective_agreement, birth_date, hire_date)
+  VALUES (p_company_id, v_number, btrim(p_full_name), lower(btrim(p_email)), regexp_replace(p_cuil, '\D', '', 'g'),
+    v_dep, v_branch, v_pos, NULLIF(btrim(p_collective_agreement), ''), p_birth_date, p_hire_date)
+  RETURNING * INTO v_emp;
+
+  INSERT INTO public.user_accounts (auth_user_id, company_id, employee_id, email, display_name, role, must_change_password)
+  VALUES (p_auth_user_id, p_company_id, v_emp.id, lower(btrim(p_email)), btrim(p_full_name), 'employee', TRUE);
+
+  RETURN v_emp;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.admin_create_employee(BIGINT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE, TEXT)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_create_employee(BIGINT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE, TEXT)
+  TO service_role;
+
+-- Cambio de estado de un empleado: activo, en licencia o baja lógica (RF-34).
+-- La baja desactiva también su cuenta, así deja de poder ingresar, y conserva
+-- todo su historial.
+CREATE OR REPLACE FUNCTION public.set_employee_status(p_employee_id BIGINT, p_status VARCHAR)
+RETURNS public.employees
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_emp public.employees;
+BEGIN
+  IF NOT private.is_employer() THEN
+    RAISE EXCEPTION 'Solo el empleador puede cambiar el estado de un empleado';
+  END IF;
+  UPDATE public.employees SET employment_status = p_status
+   WHERE id = p_employee_id AND company_id = private.current_company_id()
+  RETURNING * INTO v_emp;
+  IF v_emp.id IS NULL THEN
+    RAISE EXCEPTION 'El empleado no pertenece a tu organización';
+  END IF;
+  UPDATE public.user_accounts SET is_active = (p_status <> 'inactive')
+   WHERE employee_id = p_employee_id AND company_id = v_emp.company_id;
+  RETURN v_emp;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.set_employee_status(BIGINT, VARCHAR) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_employee_status(BIGINT, VARCHAR) TO authenticated;
+
+
+-- ============================================================================
+-- 7. FICHAJES CARGADOS POR EL EMPLEADOR
+-- ============================================================================
+-- El empleador registra o corrige la entrada y la salida de un empleado.
+-- Las horas llegan en hora local de Argentina. Si la salida es anterior a la
+-- entrada, el formulario ya la manda con la fecha del día siguiente (turno
+-- noche). La llegada tarde se calcula con 10 minutos de tolerancia, igual que
+-- en el fichaje del propio empleado.
+CREATE OR REPLACE FUNCTION public.register_attendance(
+  p_employee_id BIGINT,
+  p_clock_in TIMESTAMP,
+  p_clock_out TIMESTAMP DEFAULT NULL
+)
+RETURNS public.attendance_records
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+  v_emp public.employees;
+  v_sched public.work_schedules;
+  v_now TIMESTAMP := (now() AT TIME ZONE 'America/Argentina/Buenos_Aires');
+  v_date DATE;
+  v_rec public.attendance_records;
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employer' THEN
+    RAISE EXCEPTION 'Solo el empleador puede registrar fichajes';
+  END IF;
+
+  SELECT * INTO v_emp FROM public.employees
+   WHERE id = p_employee_id AND company_id = v_acc.company_id;
+  IF v_emp.id IS NULL THEN
+    RAISE EXCEPTION 'El empleado no pertenece a tu organización';
+  END IF;
+  IF v_emp.employment_status = 'inactive' THEN
+    RAISE EXCEPTION 'No se pueden registrar fichajes de un empleado dado de baja';
+  END IF;
+
+  IF p_clock_in IS NULL THEN
+    RAISE EXCEPTION 'Indicá la fecha y la hora de entrada';
+  END IF;
+  IF p_clock_in > v_now THEN
+    RAISE EXCEPTION 'La entrada no puede ser posterior a este momento';
+  END IF;
+  IF p_clock_out IS NOT NULL AND p_clock_out <= p_clock_in THEN
+    RAISE EXCEPTION 'La salida tiene que ser posterior a la entrada';
+  END IF;
+  IF p_clock_out IS NOT NULL AND p_clock_out > v_now THEN
+    RAISE EXCEPTION 'La salida no puede ser posterior a este momento';
+  END IF;
+  IF p_clock_out IS NOT NULL AND p_clock_out - p_clock_in > INTERVAL '24 hours' THEN
+    RAISE EXCEPTION 'Entre la entrada y la salida no puede haber más de 24 horas';
+  END IF;
+
+  v_date := p_clock_in::DATE;
+  SELECT * INTO v_sched FROM public.work_schedules
+   WHERE company_id = v_acc.company_id
+     AND employee_id = p_employee_id
+     AND week_start_date = date_trunc('week', v_date)::DATE
+     AND status = 'confirmed';
+
+  INSERT INTO public.attendance_records
+    (company_id, employee_id, work_schedule_id, work_date, clock_in_at, clock_out_at, status)
+  VALUES (
+    v_acc.company_id, p_employee_id, v_sched.id, v_date,
+    p_clock_in AT TIME ZONE 'America/Argentina/Buenos_Aires',
+    p_clock_out AT TIME ZONE 'America/Argentina/Buenos_Aires',
+    CASE WHEN v_sched.id IS NOT NULL
+          AND p_clock_in::TIME > v_sched.starts_at_snapshot + INTERVAL '10 minutes'
+         THEN 'late' ELSE 'present' END
   )
-  returning * into v_nueva;
+  ON CONFLICT (company_id, employee_id, work_date) DO UPDATE
+     SET work_schedule_id = EXCLUDED.work_schedule_id,
+         clock_in_at = EXCLUDED.clock_in_at,
+         clock_out_at = EXCLUDED.clock_out_at,
+         status = EXCLUDED.status
+  RETURNING * INTO v_rec;
 
-  return v_nueva;
-end;
+  RETURN v_rec;
+END;
 $$;
 
--- Valida y crea una solicitud de vacaciones respetando días disponibles y aviso previo
-create or replace function solicitar_vacaciones(p_empleado_id uuid, p_fecha_inicio date, p_fecha_fin date)
-returns solicitudes_vacaciones
-language plpgsql
-security definer
-as $$
-declare
-  v_organizacion_id uuid;
-  v_reglas reglas_organizacion;
-  v_dias_solicitados int;
-  v_dias_disponibles int;
-  v_dias_ya_tomados int;
-  v_nueva solicitudes_vacaciones;
-begin
-  select organizacion_id into v_organizacion_id from empleados where id = p_empleado_id;
-  select * into v_reglas from reglas_organizacion where organizacion_id = v_organizacion_id;
+REVOKE EXECUTE ON FUNCTION public.register_attendance(BIGINT, TIMESTAMP, TIMESTAMP) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.register_attendance(BIGINT, TIMESTAMP, TIMESTAMP) TO authenticated;
 
-  if (p_fecha_inicio - current_date) < v_reglas.dias_aviso_previo_vacaciones then
-    raise exception 'Debe solicitar las vacaciones con al menos % día(s) de anticipación', v_reglas.dias_aviso_previo_vacaciones;
-  end if;
 
-  v_dias_solicitados := (p_fecha_fin - p_fecha_inicio) + 1;
-  v_dias_disponibles := calcular_dias_vacaciones(p_empleado_id);
+-- ============================================================================
+-- 8. ALMACENAMIENTO DE RECIBOS DE SUELDO (RF-24, RF-25, RNF-06)
+-- ============================================================================
+-- Bucket privado: solo PDF de hasta 5 MB. Ruta de cada archivo:
+--   {company_id}/{employee_id}/{nombre_del_archivo}.pdf
+-- El empleador accede a la carpeta de su empresa y el empleado solo a la suya.
+-- Para mostrar un recibo, la aplicación genera una URL firmada temporal.
 
-  select coalesce(sum((fecha_fin - fecha_inicio) + 1), 0) into v_dias_ya_tomados
-  from solicitudes_vacaciones
-  where empleado_id = p_empleado_id
-    and estado in ('aprobado', 'pendiente')
-    and extract(year from fecha_inicio) = extract(year from p_fecha_inicio);
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('payroll-receipts', 'payroll-receipts', FALSE, 5242880, ARRAY['application/pdf'])
+ON CONFLICT (id) DO NOTHING;
 
-  if (v_dias_ya_tomados + v_dias_solicitados) > v_dias_disponibles then
-    raise exception 'La solicitud excede los días de vacaciones disponibles (% disponibles, % ya solicitados/tomados este año)',
-      v_dias_disponibles, v_dias_ya_tomados;
-  end if;
-
-  insert into solicitudes_vacaciones (empleado_id, organizacion_id, fecha_inicio, fecha_fin, estado)
-  values (
-    p_empleado_id, v_organizacion_id, p_fecha_inicio, p_fecha_fin,
-    case when v_reglas.requiere_aprobacion_vacaciones then 'pendiente' else 'aprobado' end
+CREATE POLICY "employer manages company receipts" ON storage.objects
+  FOR ALL TO authenticated
+  USING (
+    bucket_id = 'payroll-receipts'
+    AND (storage.foldername(name))[1] = private.current_company_id()::TEXT
+    AND private.is_employer()
   )
-  returning * into v_nueva;
+  WITH CHECK (
+    bucket_id = 'payroll-receipts'
+    AND (storage.foldername(name))[1] = private.current_company_id()::TEXT
+    AND private.is_employer()
+  );
 
-  return v_nueva;
-end;
+CREATE POLICY "employee reads own receipts" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'payroll-receipts'
+    AND (storage.foldername(name))[1] = private.current_company_id()::TEXT
+    AND (storage.foldername(name))[2] = private.current_employee_id()::TEXT
+  );
+
+
+-- ============================================================================
+-- 9. ADMINISTRADOR DEL SISTEMA, EDICIÓN DE EMPLEADOS Y NOTIFICACIONES
+-- ============================================================================
+-- Este bloque está al final de schema_supabase.sql y también se entrega como
+-- actualizacion_admin_notificaciones.sql, para correrlo en un proyecto que ya
+-- tiene el schema. No borra datos y se puede correr más de una vez.
+
+
+-- ----------------------------------------------------------------------------
+-- 9.1 Empresas suspendidas
+-- ----------------------------------------------------------------------------
+-- Una empresa suspendida conserva sus datos, pero ninguna de sus cuentas puede
+-- operar: la cuenta actual deja de existir para las políticas de seguridad.
+
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE OR REPLACE FUNCTION private.current_account()
+RETURNS public.user_accounts
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT ua.*
+  FROM public.user_accounts ua
+  JOIN public.companies c ON c.id = ua.company_id AND c.is_active
+  WHERE ua.auth_user_id = auth.uid() AND ua.is_active
 $$;
 
--- ============================================================================
--- 4. VISTAS DEL MÓDULO DE ESTADÍSTICAS
--- ============================================================================
 
--- Demanda de personal por día de la semana (según horarios asignados)
-create or replace view vista_demanda_por_dia as
-select organizacion_id, dia_semana, count(*) as cantidad_turnos
-from horarios
-group by organizacion_id, dia_semana;
+-- ----------------------------------------------------------------------------
+-- 9.2 Administradores del sistema (RF-01)
+-- ----------------------------------------------------------------------------
+-- No pertenecen a ninguna empresa. El primero se da de alta desde el SQL
+-- Editor (ver README); después administra las empresas desde /admin.
 
--- Demanda de personal por franja horaria
-create or replace view vista_demanda_por_horario as
-select organizacion_id, extract(hour from hora_inicio)::int as hora, count(*) as cantidad_turnos
-from horarios
-group by organizacion_id, extract(hour from hora_inicio);
-
--- Meses del año con más solicitudes de vacaciones
-create or replace view vista_vacaciones_mas_solicitadas as
-select organizacion_id, extract(month from fecha_inicio)::int as mes, count(*) as cantidad_solicitudes
-from solicitudes_vacaciones
-where estado in ('pendiente', 'aprobado')
-group by organizacion_id, extract(month from fecha_inicio);
-
--- ============================================================================
--- 5. FUNCIONES AUXILIARES PARA SEGURIDAD (RLS)
--- ============================================================================
-
-create or replace function mi_organizacion_id()
-returns uuid
-language sql
-security definer
-stable
-as $$
-  select organizacion_id from perfiles where id = auth.uid();
-$$;
-
-create or replace function mi_rol()
-returns text
-language sql
-security definer
-stable
-as $$
-  select rol from perfiles where id = auth.uid();
-$$;
-
-create or replace function mi_empleado_id()
-returns uuid
-language sql
-security definer
-stable
-as $$
-  select id from empleados where perfil_id = auth.uid();
-$$;
-
--- ============================================================================
--- 6. ROW LEVEL SECURITY: cada organización solo ve sus propios datos,
---    y cada empleado solo ve lo suyo (esto es lo que hace seguro el
---    esquema multi-tenant)
--- ============================================================================
-
-alter table organizaciones enable row level security;
-alter table perfiles enable row level security;
-alter table empleados enable row level security;
-alter table reglas_organizacion enable row level security;
-alter table regimen_vacaciones enable row level security;
-alter table horarios enable row level security;
-alter table fichajes enable row level security;
-alter table solicitudes_franco enable row level security;
-alter table solicitudes_vacaciones enable row level security;
-alter table pagos_sueldo enable row level security;
-
-create policy "ver mi organizacion" on organizaciones
-  for select using (id = mi_organizacion_id());
-
-create policy "ver perfiles de mi organizacion" on perfiles
-  for select using (organizacion_id = mi_organizacion_id());
-
-create policy "empleador ve todos los empleados" on empleados
-  for select using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-create policy "empleado se ve a si mismo" on empleados
-  for select using (perfil_id = auth.uid());
-create policy "empleador administra empleados" on empleados
-  for update using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
-create policy "leer reglas de mi organizacion" on reglas_organizacion
-  for select using (organizacion_id = mi_organizacion_id());
-create policy "empleador actualiza reglas" on reglas_organizacion
-  for update using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
-create policy "leer regimen vacaciones" on regimen_vacaciones
-  for select using (organizacion_id = mi_organizacion_id());
-create policy "empleador administra regimen" on regimen_vacaciones
-  for all using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
-create policy "empleador ve todos los horarios" on horarios
-  for select using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-create policy "empleado ve sus horarios" on horarios
-  for select using (empleado_id = mi_empleado_id());
-create policy "empleador administra horarios" on horarios
-  for all using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
-create policy "empleador ve todos los fichajes" on fichajes
-  for select using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-create policy "empleado ve sus fichajes" on fichajes
-  for select using (empleado_id = mi_empleado_id());
-create policy "empleado registra su fichaje" on fichajes
-  for insert with check (empleado_id = mi_empleado_id());
-
-create policy "empleador ve todas las solicitudes de franco" on solicitudes_franco
-  for select using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-create policy "empleado ve sus solicitudes de franco" on solicitudes_franco
-  for select using (empleado_id = mi_empleado_id());
-create policy "empleador actualiza solicitudes de franco" on solicitudes_franco
-  for update using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
-create policy "empleador ve todas las solicitudes de vacaciones" on solicitudes_vacaciones
-  for select using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-create policy "empleado ve sus solicitudes de vacaciones" on solicitudes_vacaciones
-  for select using (empleado_id = mi_empleado_id());
-create policy "empleador actualiza solicitudes de vacaciones" on solicitudes_vacaciones
-  for update using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
-create policy "empleador ve todos los pagos" on pagos_sueldo
-  for select using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-create policy "empleado ve su propio pago" on pagos_sueldo
-  for select using (empleado_id = mi_empleado_id());
-create policy "empleador administra pagos" on pagos_sueldo
-  for all using (organizacion_id = mi_organizacion_id() and mi_rol() = 'empleador');
-
--- ============================================================================
--- 7. ALMACENAMIENTO DE RECIBOS DE SUELDO (Supabase Storage)
--- ============================================================================
--- Los archivos se guardan con la ruta: {organizacion_id}/{empleado_id}/{periodo}.pdf
-
-insert into storage.buckets (id, name, public)
-values ('recibos-sueldo', 'recibos-sueldo', false)
-on conflict (id) do nothing;
-
-create policy "empleador sube recibos de su organizacion"
-on storage.objects for insert
-with check (
-  bucket_id = 'recibos-sueldo'
-  and (storage.foldername(name))[1] = mi_organizacion_id()::text
-  and mi_rol() = 'empleador'
+CREATE TABLE IF NOT EXISTS public.system_admins (
+  auth_user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  display_name VARCHAR(160),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-create policy "empleador lee recibos de su organizacion"
-on storage.objects for select
-using (
-  bucket_id = 'recibos-sueldo'
-  and (storage.foldername(name))[1] = mi_organizacion_id()::text
-  and mi_rol() = 'empleador'
+ALTER TABLE public.system_admins ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "admin reads self" ON public.system_admins;
+CREATE POLICY "admin reads self" ON public.system_admins
+  FOR SELECT TO authenticated
+  USING (auth_user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION private.is_system_admin()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$ SELECT EXISTS (SELECT 1 FROM public.system_admins WHERE auth_user_id = auth.uid()) $$;
+
+-- Listado de empresas con su empleador y su dotación
+CREATE OR REPLACE FUNCTION public.admin_list_companies()
+RETURNS TABLE (
+  id BIGINT,
+  legal_name VARCHAR,
+  is_active BOOLEAN,
+  created_at TIMESTAMPTZ,
+  employer_email VARCHAR,
+  employer_name VARCHAR,
+  employer_last_login TIMESTAMPTZ,
+  employer_must_change_password BOOLEAN,
+  employees_count BIGINT,
+  active_employees BIGINT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede ver las empresas';
+  END IF;
+  RETURN QUERY
+  SELECT c.id, c.legal_name, c.is_active, c.created_at,
+         ua.email, ua.display_name, ua.last_login_at, ua.must_change_password,
+         (SELECT count(*) FROM public.employees e WHERE e.company_id = c.id),
+         (SELECT count(*) FROM public.employees e WHERE e.company_id = c.id AND e.employment_status <> 'inactive')
+  FROM public.companies c
+  LEFT JOIN LATERAL (
+    SELECT * FROM public.user_accounts u
+     WHERE u.company_id = c.id AND u.role = 'employer'
+     ORDER BY u.id LIMIT 1
+  ) ua ON TRUE
+  ORDER BY c.legal_name;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_set_company_status(p_company_id BIGINT, p_active BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede suspender empresas';
+  END IF;
+  UPDATE public.companies SET is_active = p_active WHERE id = p_company_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'La empresa no existe';
+  END IF;
+END;
+$$;
+
+-- La función de servidor admin-companies crea la empresa con la clave de servicio
+GRANT EXECUTE ON FUNCTION public.admin_create_company(TEXT, TEXT, TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.admin_list_companies() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_set_company_status(BIGINT, BOOLEAN) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_list_companies() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_set_company_status(BIGINT, BOOLEAN) TO authenticated;
+GRANT EXECUTE ON FUNCTION private.is_system_admin() TO authenticated;
+
+
+-- ----------------------------------------------------------------------------
+-- 9.3 Edición de los datos de un empleado
+-- ----------------------------------------------------------------------------
+-- El email de acceso se cambia aparte, con la función de servidor
+-- update-employee-email, porque también hay que cambiarlo en Supabase Auth.
+
+CREATE OR REPLACE FUNCTION public.update_employee(
+  p_employee_id BIGINT,
+  p_full_name TEXT,
+  p_cuil TEXT,
+  p_department TEXT,
+  p_branch TEXT,
+  p_job_position TEXT,
+  p_birth_date DATE,
+  p_hire_date DATE,
+  p_collective_agreement TEXT DEFAULT NULL
+)
+RETURNS public.employees
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_company BIGINT := private.current_company_id();
+  v_cuil TEXT := regexp_replace(COALESCE(p_cuil, ''), '\D', '', 'g');
+  v_dep BIGINT; v_branch BIGINT; v_pos BIGINT;
+  v_emp public.employees;
+BEGIN
+  IF NOT private.is_employer() THEN
+    RAISE EXCEPTION 'Solo el empleador puede editar empleados';
+  END IF;
+  IF btrim(COALESCE(p_full_name, '')) = '' OR btrim(COALESCE(p_department, '')) = ''
+     OR btrim(COALESCE(p_branch, '')) = '' OR btrim(COALESCE(p_job_position, '')) = ''
+     OR p_birth_date IS NULL OR p_hire_date IS NULL THEN
+    RAISE EXCEPTION 'Completá todos los campos obligatorios';
+  END IF;
+  IF length(v_cuil) <> 11 THEN
+    RAISE EXCEPTION 'El CUIL debe tener 11 dígitos';
+  END IF;
+  IF p_hire_date < p_birth_date THEN
+    RAISE EXCEPTION 'La fecha de ingreso no puede ser anterior a la fecha de nacimiento';
+  END IF;
+
+  PERFORM 1 FROM public.employees WHERE id = p_employee_id AND company_id = v_company;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'El empleado no pertenece a tu organización';
+  END IF;
+
+  INSERT INTO public.departments (company_id, name) VALUES (v_company, btrim(p_department))
+    ON CONFLICT (company_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO v_dep;
+  INSERT INTO public.branches (company_id, name) VALUES (v_company, btrim(p_branch))
+    ON CONFLICT (company_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO v_branch;
+  INSERT INTO public.job_positions (company_id, name) VALUES (v_company, btrim(p_job_position))
+    ON CONFLICT (company_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO v_pos;
+
+  UPDATE public.employees
+     SET full_name = btrim(p_full_name),
+         cuil = v_cuil,
+         department_id = v_dep,
+         branch_id = v_branch,
+         job_position_id = v_pos,
+         birth_date = p_birth_date,
+         hire_date = p_hire_date,
+         collective_agreement = NULLIF(btrim(COALESCE(p_collective_agreement, '')), '')
+   WHERE id = p_employee_id AND company_id = v_company
+  RETURNING * INTO v_emp;
+
+  UPDATE public.user_accounts SET display_name = v_emp.full_name
+   WHERE employee_id = v_emp.id AND company_id = v_company;
+
+  RETURN v_emp;
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya existe otro empleado con ese CUIL en la organización';
+END;
+$$;
+
+-- Usada por la función de servidor update-employee-email con la clave de servicio
+CREATE OR REPLACE FUNCTION public.admin_update_employee_email(
+  p_company_id BIGINT,
+  p_employee_id BIGINT,
+  p_email TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public.employees SET email = lower(btrim(p_email))
+   WHERE id = p_employee_id AND company_id = p_company_id;
+  UPDATE public.user_accounts SET email = lower(btrim(p_email))
+   WHERE employee_id = p_employee_id AND company_id = p_company_id;
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya existe una cuenta con ese email';
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.update_employee(BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_employee(BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE, TEXT) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.admin_update_employee_email(BIGINT, BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_update_employee_email(BIGINT, BIGINT, TEXT) TO service_role;
+
+
+-- ----------------------------------------------------------------------------
+-- 9.4 Notificaciones
+-- ----------------------------------------------------------------------------
+-- Las crea la base sola, con disparadores, cuando pasa algo que le interesa a
+-- alguien: una solicitud nueva o respondida, un horario asignado o un recibo
+-- cargado. Cada usuario ve solo las suyas y solo puede marcarlas como leídas.
+
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  company_id BIGINT NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  recipient_account_id BIGINT NOT NULL REFERENCES public.user_accounts(id) ON DELETE CASCADE,
+  kind VARCHAR(40) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  body TEXT,
+  link VARCHAR(200),
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-create policy "empleado lee su propio recibo"
-on storage.objects for select
-using (
-  bucket_id = 'recibos-sueldo'
-  and (storage.foldername(name))[2] = mi_empleado_id()::text
-);
+CREATE INDEX IF NOT EXISTS notifications_recipient_idx
+  ON public.notifications (recipient_account_id, created_at DESC);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "recipient reads own" ON public.notifications;
+CREATE POLICY "recipient reads own" ON public.notifications
+  FOR SELECT TO authenticated
+  USING (recipient_account_id = private.current_account_id());
+DROP POLICY IF EXISTS "recipient marks own" ON public.notifications;
+CREATE POLICY "recipient marks own" ON public.notifications
+  FOR UPDATE TO authenticated
+  USING (recipient_account_id = private.current_account_id())
+  WITH CHECK (recipient_account_id = private.current_account_id());
+
+-- Desde la aplicación solo se puede leer y marcar como leída
+REVOKE INSERT, UPDATE, DELETE ON public.notifications FROM anon, authenticated;
+GRANT SELECT ON public.notifications TO authenticated;
+GRANT UPDATE (read_at) ON public.notifications TO authenticated;
+
+CREATE OR REPLACE FUNCTION private.notify_employers(
+  p_company_id BIGINT, p_kind TEXT, p_title TEXT, p_body TEXT, p_link TEXT
+)
+RETURNS VOID
+LANGUAGE sql SECURITY DEFINER
+SET search_path = ''
+AS $$
+  INSERT INTO public.notifications (company_id, recipient_account_id, kind, title, body, link)
+  SELECT p_company_id, ua.id, p_kind, p_title, p_body, p_link
+  FROM public.user_accounts ua
+  WHERE ua.company_id = p_company_id AND ua.role = 'employer' AND ua.is_active;
+$$;
+
+CREATE OR REPLACE FUNCTION private.notify_employee(
+  p_company_id BIGINT, p_employee_id BIGINT, p_kind TEXT, p_title TEXT, p_body TEXT, p_link TEXT
+)
+RETURNS VOID
+LANGUAGE sql SECURITY DEFINER
+SET search_path = ''
+AS $$
+  INSERT INTO public.notifications (company_id, recipient_account_id, kind, title, body, link)
+  SELECT p_company_id, ua.id, p_kind, p_title, p_body, p_link
+  FROM public.user_accounts ua
+  WHERE ua.company_id = p_company_id AND ua.employee_id = p_employee_id AND ua.is_active;
+$$;
+
+CREATE OR REPLACE FUNCTION private.employee_name(p_employee_id BIGINT)
+RETURNS TEXT
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$ SELECT full_name FROM public.employees WHERE id = p_employee_id $$;
+
+CREATE OR REPLACE FUNCTION private.short_date(p_date DATE)
+RETURNS TEXT
+LANGUAGE sql IMMUTABLE
+SET search_path = ''
+AS $$ SELECT to_char(p_date, 'DD/MM/YYYY') $$;
+
+-- Francos. Se evalúa al confirmar la transacción, cuando ya están cargados los días.
+CREATE OR REPLACE FUNCTION private.notify_days_off()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_name TEXT := private.employee_name(NEW.employee_id);
+  v_dates TEXT;
+  v_count INTEGER;
+BEGIN
+  SELECT string_agg(private.short_date(requested_date), ', ' ORDER BY requested_date), count(*)
+    INTO v_dates, v_count
+    FROM public.days_off_request_dates WHERE request_id = NEW.id;
+  v_dates := COALESCE(v_dates, '');
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.request_type = 'employer_assignment' THEN
+      PERFORM private.notify_employee(NEW.company_id, NEW.employee_id, 'days_off_assigned',
+        'Te asignaron francos', 'Días: ' || v_dates || '.', '/empleado/francos');
+    ELSIF NEW.status = 'pending' THEN
+      PERFORM private.notify_employers(NEW.company_id, 'days_off_requested',
+        'Nueva solicitud de franco',
+        v_name || ' pidió ' || v_count || CASE WHEN v_count = 1 THEN ' día: ' ELSE ' días: ' END || v_dates || '.',
+        '/empleador/francos');
+    ELSIF NEW.status = 'approved' THEN
+      PERFORM private.notify_employers(NEW.company_id, 'days_off_auto_approved',
+        'Franco aprobado automáticamente',
+        v_name || ' se tomó franco el ' || v_dates || '. Cumplía las reglas configuradas.',
+        '/empleador/francos');
+    END IF;
+  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF OLD.status = 'pending' AND NEW.status IN ('approved', 'rejected') THEN
+      PERFORM private.notify_employee(NEW.company_id, NEW.employee_id,
+        'days_off_' || NEW.status,
+        CASE WHEN NEW.status = 'approved' THEN 'Tu solicitud de franco fue aprobada'
+             ELSE 'Tu solicitud de franco fue rechazada' END,
+        'Días: ' || v_dates || '.' || COALESCE(' Motivo: ' || NULLIF(btrim(NEW.resolution_note), ''), ''),
+        '/empleado/francos');
+    ELSIF NEW.status = 'cancelled' THEN
+      PERFORM private.notify_employers(NEW.company_id, 'days_off_cancelled',
+        'Solicitud de franco cancelada', v_name || ' canceló su pedido para el ' || v_dates || '.',
+        '/empleador/francos');
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS days_off_requests_notify_insert ON public.days_off_requests;
+CREATE CONSTRAINT TRIGGER days_off_requests_notify_insert
+  AFTER INSERT ON public.days_off_requests
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION private.notify_days_off();
+DROP TRIGGER IF EXISTS days_off_requests_notify_update ON public.days_off_requests;
+CREATE TRIGGER days_off_requests_notify_update
+  AFTER UPDATE OF status ON public.days_off_requests
+  FOR EACH ROW EXECUTE FUNCTION private.notify_days_off();
+
+-- Vacaciones
+CREATE OR REPLACE FUNCTION private.notify_vacation()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_name TEXT := private.employee_name(NEW.employee_id);
+  v_range TEXT := 'del ' || private.short_date(NEW.start_date) || ' al ' || private.short_date(NEW.end_date)
+    || ' (' || NEW.requested_days || ' días)';
+  v_by_employer BOOLEAN;
+BEGIN
+  SELECT role = 'employer' INTO v_by_employer FROM public.user_accounts WHERE id = NEW.submitted_by_user_id;
+
+  IF TG_OP = 'INSERT' THEN
+    IF v_by_employer THEN
+      PERFORM private.notify_employee(NEW.company_id, NEW.employee_id, 'vacation_assigned',
+        'Te asignaron vacaciones', 'Período ' || v_range || '.', '/empleado/vacaciones');
+    ELSIF NEW.status = 'pending' THEN
+      PERFORM private.notify_employers(NEW.company_id, 'vacation_requested',
+        'Nueva solicitud de vacaciones', v_name || ' pidió vacaciones ' || v_range || '.',
+        '/empleador/vacaciones');
+    ELSIF NEW.status = 'approved' THEN
+      PERFORM private.notify_employers(NEW.company_id, 'vacation_auto_approved',
+        'Vacaciones aprobadas automáticamente', v_name || ' se tomará vacaciones ' || v_range || '.',
+        '/empleador/vacaciones');
+    END IF;
+  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF OLD.status = 'pending' AND NEW.status IN ('approved', 'rejected') THEN
+      PERFORM private.notify_employee(NEW.company_id, NEW.employee_id,
+        'vacation_' || NEW.status,
+        CASE WHEN NEW.status = 'approved' THEN 'Tus vacaciones fueron aprobadas'
+             ELSE 'Tu solicitud de vacaciones fue rechazada' END,
+        'Período ' || v_range || '.' || COALESCE(' Motivo: ' || NULLIF(btrim(NEW.resolution_note), ''), ''),
+        '/empleado/vacaciones');
+    ELSIF NEW.status = 'cancelled' THEN
+      PERFORM private.notify_employers(NEW.company_id, 'vacation_cancelled',
+        'Solicitud de vacaciones cancelada', v_name || ' canceló su pedido ' || v_range || '.',
+        '/empleador/vacaciones');
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS vacation_requests_notify ON public.vacation_requests;
+CREATE TRIGGER vacation_requests_notify
+  AFTER INSERT OR UPDATE OF status ON public.vacation_requests
+  FOR EACH ROW EXECUTE FUNCTION private.notify_vacation();
+
+-- Horarios
+CREATE OR REPLACE FUNCTION private.notify_schedule()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_week TEXT := 'la semana del ' || private.short_date(NEW.week_start_date);
+BEGIN
+  IF NEW.status = 'cancelled' THEN
+    IF TG_OP = 'UPDATE' AND OLD.status = 'confirmed' THEN
+      PERFORM private.notify_employee(NEW.company_id, NEW.employee_id, 'schedule_removed',
+        'Se quitó tu horario', 'Ya no tenés turno asignado para ' || v_week || '.', '/empleado/horarios');
+    END IF;
+    RETURN NULL;
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status = NEW.status
+     AND OLD.shift_type_id = NEW.shift_type_id
+     AND OLD.starts_at_snapshot = NEW.starts_at_snapshot
+     AND OLD.ends_at_snapshot = NEW.ends_at_snapshot THEN
+    RETURN NULL;
+  END IF;
+  PERFORM private.notify_employee(NEW.company_id, NEW.employee_id, 'schedule_assigned',
+    CASE WHEN TG_OP = 'INSERT' THEN 'Tenés horario asignado' ELSE 'Cambió tu horario' END,
+    NEW.shift_name_snapshot || ', de ' || to_char(NEW.starts_at_snapshot, 'HH24:MI') || ' a '
+      || to_char(NEW.ends_at_snapshot, 'HH24:MI') || ', para ' || v_week || '.',
+    '/empleado/horarios');
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS work_schedules_notify ON public.work_schedules;
+CREATE TRIGGER work_schedules_notify
+  AFTER INSERT OR UPDATE ON public.work_schedules
+  FOR EACH ROW EXECUTE FUNCTION private.notify_schedule();
+
+-- Recibos de sueldo
+CREATE OR REPLACE FUNCTION private.notify_payroll()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_period DATE;
+  v_months TEXT[] := ARRAY['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
+                           'septiembre','octubre','noviembre','diciembre'];
+BEGIN
+  IF NEW.status <> 'paid' OR (TG_OP = 'UPDATE' AND OLD.status = 'paid') THEN
+    RETURN NULL;
+  END IF;
+  SELECT starts_on INTO v_period FROM public.payroll_periods WHERE id = NEW.payroll_period_id;
+  PERFORM private.notify_employee(NEW.company_id, NEW.employee_id, 'payroll_paid',
+    'Ya está tu recibo de sueldo',
+    CASE NEW.payment_type
+      WHEN 'aguinaldo_first_installment' THEN 'Aguinaldo, primera cuota'
+      WHEN 'aguinaldo_second_installment' THEN 'Aguinaldo, segunda cuota'
+      ELSE 'Sueldo' END
+      || ' de ' || v_months[EXTRACT(MONTH FROM v_period)::INT] || ' ' || EXTRACT(YEAR FROM v_period)::INT || '.',
+    '/empleado/sueldos');
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS payroll_records_notify ON public.payroll_records;
+CREATE TRIGGER payroll_records_notify
+  AFTER INSERT OR UPDATE OF status ON public.payroll_records
+  FOR EACH ROW EXECUTE FUNCTION private.notify_payroll();
+
+-- Aviso en tiempo real: la aplicación escucha las notificaciones nuevas
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'notifications'
+     ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  END IF;
+END;
+$$;
+
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC, anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private TO authenticated;
+
 
 -- ============================================================================
--- FIN DEL ESQUEMA
+-- 10. PLANES, FOTO DE PERFIL E IMPORTACIÓN DE FICHAJES
 -- ============================================================================
+-- Este bloque está al final de schema_supabase.sql y también se entrega como
+-- actualizacion_planes_perfil_fichadas.sql, para un proyecto que ya tiene el
+-- schema y las actualizaciones anteriores. No borra datos y se puede correr
+-- más de una vez.
+
+
+-- ----------------------------------------------------------------------------
+-- 10.1 Planes
+-- ----------------------------------------------------------------------------
+-- Cada empresa tiene un plan. El plan fija cuántos empleados activos puede
+-- tener; el administrador del sistema edita los planes y asigna el de cada
+-- empresa. Los planes son públicos porque se muestran en la página de precios.
+
+CREATE TABLE IF NOT EXISTS public.plans (
+  code VARCHAR(30) PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  description TEXT,
+  monthly_price NUMERIC(12, 2) CHECK (monthly_price IS NULL OR monthly_price >= 0),
+  max_employees INTEGER CHECK (max_employees IS NULL OR max_employees > 0),
+  sort_order SMALLINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO public.plans (code, name, description, monthly_price, max_employees, sort_order) VALUES
+  ('operativo', 'Operativo / Pyme', 'Empresas y equipos en crecimiento.', 39, 50, 1),
+  ('profesional', 'Profesional / CCT', 'Medianas empresas y plantas bajo convenio.', 103, 250, 2),
+  ('a_medida', 'Enterprise / A medida', 'Corporaciones con varias plantas y sedes.', NULL, NULL, 3)
+ON CONFLICT (code) DO NOTHING;
+
+ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anyone reads plans" ON public.plans;
+CREATE POLICY "anyone reads plans" ON public.plans FOR SELECT TO anon, authenticated USING (TRUE);
+REVOKE INSERT, UPDATE, DELETE ON public.plans FROM anon, authenticated;
+GRANT SELECT ON public.plans TO anon, authenticated;
+
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS plan_code VARCHAR(30) NOT NULL DEFAULT 'operativo'
+  REFERENCES public.plans(code);
+
+DROP TRIGGER IF EXISTS plans_set_updated_at ON public.plans;
+CREATE TRIGGER plans_set_updated_at BEFORE UPDATE ON public.plans
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- Límite de empleados activos según el plan
+CREATE OR REPLACE FUNCTION private.check_employee_limit(p_company_id BIGINT, p_extra INTEGER DEFAULT 1)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_plan public.plans;
+  v_current INTEGER;
+BEGIN
+  SELECT p.* INTO v_plan FROM public.companies c JOIN public.plans p ON p.code = c.plan_code WHERE c.id = p_company_id;
+  IF v_plan.max_employees IS NULL THEN RETURN; END IF;
+  SELECT count(*) INTO v_current FROM public.employees
+   WHERE company_id = p_company_id AND employment_status <> 'inactive';
+  IF v_current + p_extra > v_plan.max_employees THEN
+    RAISE EXCEPTION 'Tu plan % permite hasta % empleados activos y ya tenés %. Para sumar más, pedile al administrador del sistema un cambio de plan.',
+      v_plan.name, v_plan.max_employees, v_current;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.employees_limit_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.employment_status <> 'inactive'
+     AND (TG_OP = 'INSERT' OR OLD.employment_status = 'inactive') THEN
+    PERFORM private.check_employee_limit(NEW.company_id, 1);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS employees_limit_guard ON public.employees;
+CREATE TRIGGER employees_limit_guard
+  BEFORE INSERT OR UPDATE OF employment_status ON public.employees
+  FOR EACH ROW EXECUTE FUNCTION private.employees_limit_guard();
+
+CREATE OR REPLACE FUNCTION public.admin_update_plan(
+  p_code TEXT, p_name TEXT, p_description TEXT, p_monthly_price NUMERIC, p_max_employees INTEGER
+)
+RETURNS public.plans
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_plan public.plans;
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede editar los planes';
+  END IF;
+  IF btrim(COALESCE(p_name, '')) = '' THEN
+    RAISE EXCEPTION 'El plan necesita un nombre';
+  END IF;
+  UPDATE public.plans
+     SET name = btrim(p_name), description = NULLIF(btrim(COALESCE(p_description, '')), ''),
+         monthly_price = p_monthly_price, max_employees = p_max_employees
+   WHERE code = p_code
+  RETURNING * INTO v_plan;
+  IF v_plan.code IS NULL THEN
+    RAISE EXCEPTION 'El plan no existe';
+  END IF;
+  RETURN v_plan;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_set_company_plan(p_company_id BIGINT, p_plan_code TEXT)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_plan public.plans;
+  v_current INTEGER;
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede cambiar el plan';
+  END IF;
+  SELECT * INTO v_plan FROM public.plans WHERE code = p_plan_code;
+  IF v_plan.code IS NULL THEN
+    RAISE EXCEPTION 'El plan no existe';
+  END IF;
+  SELECT count(*) INTO v_current FROM public.employees
+   WHERE company_id = p_company_id AND employment_status <> 'inactive';
+  IF v_plan.max_employees IS NOT NULL AND v_current > v_plan.max_employees THEN
+    RAISE EXCEPTION 'La empresa tiene % empleados activos y el plan % permite hasta %',
+      v_current, v_plan.name, v_plan.max_employees;
+  END IF;
+  UPDATE public.companies SET plan_code = p_plan_code WHERE id = p_company_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'La empresa no existe';
+  END IF;
+END;
+$$;
+
+-- El listado de empresas ahora incluye el plan
+DROP FUNCTION IF EXISTS public.admin_list_companies();
+CREATE FUNCTION public.admin_list_companies()
+RETURNS TABLE (
+  id BIGINT,
+  legal_name VARCHAR,
+  is_active BOOLEAN,
+  created_at TIMESTAMPTZ,
+  plan_code VARCHAR,
+  plan_name VARCHAR,
+  plan_max_employees INTEGER,
+  employer_email VARCHAR,
+  employer_name VARCHAR,
+  employer_last_login TIMESTAMPTZ,
+  employer_must_change_password BOOLEAN,
+  employees_count BIGINT,
+  active_employees BIGINT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede ver las empresas';
+  END IF;
+  RETURN QUERY
+  SELECT c.id, c.legal_name, c.is_active, c.created_at,
+         p.code, p.name, p.max_employees,
+         ua.email, ua.display_name, ua.last_login_at, ua.must_change_password,
+         (SELECT count(*) FROM public.employees e WHERE e.company_id = c.id),
+         (SELECT count(*) FROM public.employees e WHERE e.company_id = c.id AND e.employment_status <> 'inactive')
+  FROM public.companies c
+  JOIN public.plans p ON p.code = c.plan_code
+  LEFT JOIN LATERAL (
+    SELECT * FROM public.user_accounts u
+     WHERE u.company_id = c.id AND u.role = 'employer'
+     ORDER BY u.id LIMIT 1
+  ) ua ON TRUE
+  ORDER BY c.legal_name;
+END;
+$$;
+
+-- Indicadores del panel de inicio del administrador
+CREATE OR REPLACE FUNCTION public.admin_dashboard()
+RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_result JSONB;
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede ver este panel';
+  END IF;
+  SELECT jsonb_build_object(
+    'companies', (SELECT count(*) FROM public.companies),
+    'active_companies', (SELECT count(*) FROM public.companies WHERE is_active),
+    'employees', (SELECT count(*) FROM public.employees e JOIN public.companies c ON c.id = e.company_id
+                   WHERE c.is_active AND e.employment_status <> 'inactive'),
+    'accounts', (SELECT count(*) FROM public.user_accounts WHERE is_active),
+    'logins_30d', (SELECT count(*) FROM public.user_accounts WHERE last_login_at > now() - INTERVAL '30 days'),
+    'pending_first_login', (SELECT count(*) FROM public.user_accounts WHERE role = 'employer' AND must_change_password),
+    'monthly_revenue', (SELECT COALESCE(sum(p.monthly_price), 0) FROM public.companies c
+                         JOIN public.plans p ON p.code = c.plan_code WHERE c.is_active),
+    'custom_plans', (SELECT count(*) FROM public.companies c JOIN public.plans p ON p.code = c.plan_code
+                      WHERE c.is_active AND p.monthly_price IS NULL),
+    'by_plan', (SELECT COALESCE(jsonb_agg(r ORDER BY r.sort_order), '[]') FROM (
+                  SELECT p.code, p.name, p.sort_order,
+                         count(c.id) FILTER (WHERE c.is_active) AS companies
+                  FROM public.plans p LEFT JOIN public.companies c ON c.plan_code = p.code
+                  GROUP BY p.code, p.name, p.sort_order) r),
+    'by_month', (SELECT COALESCE(jsonb_agg(r ORDER BY r.month), '[]') FROM (
+                   SELECT to_char(m, 'YYYY-MM') AS month,
+                          (SELECT count(*) FROM public.companies c
+                            WHERE date_trunc('month', c.created_at) = m) AS companies
+                   FROM generate_series(date_trunc('month', now()) - INTERVAL '11 months',
+                                        date_trunc('month', now()), INTERVAL '1 month') m) r),
+    'near_limit', (SELECT COALESCE(jsonb_agg(r ORDER BY r.usage DESC), '[]') FROM (
+                     SELECT c.id, c.legal_name, p.name AS plan_name, p.max_employees,
+                            count(e.id) FILTER (WHERE e.employment_status <> 'inactive') AS employees,
+                            round(100.0 * count(e.id) FILTER (WHERE e.employment_status <> 'inactive') / p.max_employees) AS usage
+                     FROM public.companies c
+                     JOIN public.plans p ON p.code = c.plan_code
+                     LEFT JOIN public.employees e ON e.company_id = c.id
+                     WHERE c.is_active AND p.max_employees IS NOT NULL
+                     GROUP BY c.id, c.legal_name, p.name, p.max_employees
+                     HAVING count(e.id) FILTER (WHERE e.employment_status <> 'inactive') >= 0.8 * p.max_employees) r),
+    'recent', (SELECT COALESCE(jsonb_agg(r ORDER BY r.created_at DESC), '[]') FROM (
+                 SELECT c.id, c.legal_name, c.created_at, c.is_active, p.name AS plan_name
+                 FROM public.companies c JOIN public.plans p ON p.code = c.plan_code
+                 ORDER BY c.created_at DESC LIMIT 5) r)
+  ) INTO v_result;
+  RETURN v_result;
+END;
+$$;
+
+-- Nombre visible del administrador
+CREATE OR REPLACE FUNCTION public.admin_update_profile(p_display_name TEXT)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede hacer esto';
+  END IF;
+  UPDATE public.system_admins SET display_name = NULLIF(btrim(COALESCE(p_display_name, '')), '')
+   WHERE auth_user_id = auth.uid();
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_set_company_plan(BIGINT, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_list_companies() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_dashboard() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_update_profile(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_set_company_plan(BIGINT, TEXT) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_list_companies() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_dashboard() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_update_profile(TEXT) TO authenticated;
+
+
+-- ----------------------------------------------------------------------------
+-- 10.2 Foto de perfil
+-- ----------------------------------------------------------------------------
+-- Bucket público de imágenes chicas. Cada usuario escribe solo en su carpeta,
+-- que se llama como su identificador de Supabase Auth.
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('avatars', 'avatars', TRUE, 1048576, ARRAY['image/jpeg', 'image/png', 'image/webp'])
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "users manage own avatar" ON storage.objects;
+CREATE POLICY "users manage own avatar" ON storage.objects
+  FOR ALL TO authenticated
+  USING (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::TEXT)
+  WITH CHECK (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::TEXT);
+
+CREATE OR REPLACE FUNCTION public.set_my_profile_photo(p_storage_key TEXT)
+RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF p_storage_key IS NOT NULL AND split_part(p_storage_key, '/', 1) <> auth.uid()::TEXT THEN
+    RAISE EXCEPTION 'La foto tiene que estar en tu carpeta';
+  END IF;
+  UPDATE public.user_accounts SET profile_photo_storage_key = p_storage_key
+   WHERE auth_user_id = auth.uid();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tu usuario no tiene una cuenta asociada';
+  END IF;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.set_my_profile_photo(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_my_profile_photo(TEXT) TO authenticated;
+
+
+-- ----------------------------------------------------------------------------
+-- 10.3 Importación de fichajes desde una planilla
+-- ----------------------------------------------------------------------------
+-- Recibe las filas ya leídas por la aplicación: legajo, entrada y salida
+-- (fecha y hora local). Cada fila se guarda con las mismas validaciones que la
+-- carga manual; las que fallan no frenan al resto y vuelven con su error.
+
+CREATE OR REPLACE FUNCTION public.import_attendance(p_rows JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+  v_item JSONB;
+  v_index BIGINT;
+  v_employee_id BIGINT;
+  v_results JSONB := '[]'::JSONB;
+BEGIN
+  IF v_acc.id IS NULL OR v_acc.role <> 'employer' THEN
+    RAISE EXCEPTION 'Solo el empleador puede importar fichajes';
+  END IF;
+  IF jsonb_typeof(p_rows) <> 'array' OR jsonb_array_length(p_rows) = 0 THEN
+    RAISE EXCEPTION 'La planilla no tiene filas para importar';
+  END IF;
+  IF jsonb_array_length(p_rows) > 3000 THEN
+    RAISE EXCEPTION 'Se pueden importar hasta 3000 filas por vez';
+  END IF;
+
+  FOR v_item, v_index IN SELECT value, ordinality FROM jsonb_array_elements(p_rows) WITH ORDINALITY LOOP
+    BEGIN
+      SELECT id INTO v_employee_id FROM public.employees
+       WHERE company_id = v_acc.company_id AND employee_number = btrim(v_item->>'legajo');
+      IF v_employee_id IS NULL THEN
+        RAISE EXCEPTION 'No existe el legajo %', v_item->>'legajo';
+      END IF;
+      PERFORM public.register_attendance(
+        v_employee_id,
+        (v_item->>'entrada')::TIMESTAMP,
+        NULLIF(v_item->>'salida', '')::TIMESTAMP
+      );
+      v_results := v_results || jsonb_build_object('fila', COALESCE((v_item->>'fila')::INT, v_index), 'ok', TRUE);
+    EXCEPTION WHEN OTHERS THEN
+      v_results := v_results || jsonb_build_object('fila', COALESCE((v_item->>'fila')::INT, v_index), 'ok', FALSE, 'error', SQLERRM);
+    END;
+  END LOOP;
+  RETURN v_results;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.import_attendance(JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.import_attendance(JSONB) TO authenticated;
+
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC, anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private TO authenticated;

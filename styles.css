@@ -1,0 +1,166 @@
+/* Tamaño base: todas las medidas están en rem, así que escalan juntas,
+   igual que con el zoom del navegador. */
+html {
+  font-size: 112.5%;
+  background-color: #f5f7ff;
+  scrollbar-gutter: stable;
+  scrollbar-color: #cbd5e1 #f5f7ff;
+}
+
+@media (min-width: 1440px) {
+  html {
+    font-size: 118.75%;
+  }
+}
+
+@media (min-width: 1800px) {
+  html {
+    font-size: 125%;
+  }
+}
+
+::-webkit-scrollbar-track {
+  background-color: #f5f7ff;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border: 3px solid #f5f7ff;
+  border-radius: 9999px;
+}
+
+.page-title {
+  color: #0f172a;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.hr-data-table {
+  border-collapse: collapse;
+  color: #334155;
+  font-size: 0.625rem;
+  line-height: 1.5;
+}
+
+.hr-data-table--standard {
+  text-align: left;
+}
+
+.hr-data-table.hr-data-table--standard th,
+.hr-data-table.hr-data-table--standard td {
+  padding: 0.625rem 0.75rem;
+  text-align: inherit;
+  vertical-align: middle;
+}
+
+.hr-data-table.hr-data-table--standard thead tr {
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f0f4ff;
+  color: #475569;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hr-data-table--standard th.text-center,
+.hr-data-table--standard td.text-center {
+  text-align: center;
+}
+
+.hr-data-table--standard th.text-right,
+.hr-data-table--standard td.text-right {
+  text-align: right;
+}
+
+.hr-data-table--standard th.text-left,
+.hr-data-table--standard td.text-left {
+  text-align: left;
+}
+
+.hr-data-table--standard tbody tr:not(:last-child) {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.hr-data-table th,
+.hr-data-table td {
+  padding: 0.625rem 0.75rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hr-data-table td.employee-identity-cell {
+  padding-right: 5px;
+  padding-left: 5px;
+  text-align: left;
+}
+
+.hr-data-table thead tr {
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f1f5f9;
+  color: #475569;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hr-data-table tbody tr:not(:last-child) {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.hr-data-table--comparison thead th:nth-child(3) {
+  background-color: #eff6ff;
+  color: #1e3a8a;
+}
+
+.hr-data-table-footer {
+  border-top: 1px solid #e2e8f0 !important;
+  background-color: #f0f4ff !important;
+  padding: 0.5rem 0.75rem !important;
+  color: #475569 !important;
+  font-size: 0.5rem !important;
+}
+
+/* Barra de progreso al cambiar de sección */
+@keyframes shell-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+/* Las tablas anchas se desplazan dentro de su tarjeta en pantallas chicas */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Los textos ocultos para lectores de pantalla (sr-only) se posicionan en
+   absoluto; sin esto se escapan del contenedor desplazable y ensanchan la
+   página en celulares. */
+.overflow-x-auto:not(.absolute):not(.fixed):not(.sticky) {
+  position: relative;
+}
+
+/* Tamaño único para todas las tablas del sistema (menos la comparación de
+   planes de la página de precios): encabezados y celdas a
+   0.625rem, etiquetas redondeadas a 0.5625rem. Tiene !important para ganarle
+   a los tamaños sueltos que traía cada tabla. */
+.hr-data-table:not(.hr-data-table--comparison) thead tr,
+.hr-data-table:not(.hr-data-table--comparison) thead th {
+  font-size: 0.625rem !important;
+}
+
+.hr-data-table:not(.hr-data-table--comparison) tbody td,
+.hr-data-table:not(.hr-data-table--comparison) tbody td :where(span, p, a, button, div, strong) {
+  font-size: 0.625rem !important;
+}
+
+.hr-data-table:not(.hr-data-table--comparison) tbody td :where(.rounded-full, .rounded-md.border):not(input, select, textarea) {
+  font-size: 0.5625rem !important;
+}
