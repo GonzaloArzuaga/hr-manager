@@ -1,0 +1,5 @@
+# Configuración para la CLI de Supabase (despliegue de funciones).
+project_id = "hr-manager"
+
+[functions.create-employee]
+verify_jwt = true
