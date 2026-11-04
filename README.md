@@ -25,7 +25,7 @@ insert into public.system_admins (auth_user_id, display_name)
 select id, 'Nombre del administrador' from auth.users where email = 'email@admin.com';
 ```
 
-Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql` y `database/actualizacion_planes_perfil_fichadas.sql`.
+Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql` y `database/actualizacion_modulos_demos.sql`.
 
 **Datos de demostración (opcional).** Después del seed se puede ejecutar `database/datos_demo_anual.sql`: agrega 20 empleados sin cuenta a "Empresa Test SRL" y un año completo de horarios, francos, vacaciones, fichajes y sueldos, para que Estadísticas y los historiales muestren datos. Se puede volver a ejecutar sin duplicar nada. Los recibos de esos sueldos no tienen PDF: al abrirlos el sistema avisa que son de demostración.
 
@@ -34,7 +34,7 @@ Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar to
 En **Authentication > URL Configuration**:
 
 - **Site URL**: la dirección donde se publica el sistema (en desarrollo, `http://localhost:5173`).
-- **Redirect URLs**: agregar `http://localhost:5173/nueva-contrasena` y la misma ruta del sitio publicado.
+- **Redirect URLs**: agregar `http://localhost:5173/login/change-password` y la misma ruta del sitio publicado. La dirección vieja `/nueva-contrasena` redirige a la nueva, así que los correos ya enviados siguen funcionando.
 
 El enlace de recuperación vence a la hora y sirve una sola vez (RNF-11); es la configuración por defecto de Supabase en **Authentication > Providers > Email**.
 
@@ -101,6 +101,7 @@ Para compilar: `npm run build` y `npm run preview`.
 | `/employee/configuration` | Configuración del empleado |
 | `/admin` | Administrador del sistema: tablero con empresas, empleados, facturación y planes |
 | `/admin/empresas` | Alta, plan, suspensión y contraseñas de las empresas |
+| `/admin/solicitudes` | Solicitudes de demostración que llegan desde Precios: seguimiento y alta de la empresa |
 | `/admin/configuracion` | Precios y límites de los planes, nombre y contraseña del administrador |
 
 `main.jsx` exige sesión en las rutas privadas y separa las del administrador, empleador y empleado. La autorización real la hacen las políticas RLS de la base: aunque alguien fuerce una ruta, solo recibe los datos que su rol y su empresa le permiten.
@@ -147,9 +148,25 @@ Para compilar: `npm run build` y `npm run preview`.
 
 ### Planes
 
-- Los planes están en la tabla `plans` (Operativo / Pyme, Profesional y Enterprise). El administrador cambia nombre, precio y máximo de empleados desde `/admin/configuracion`.
+- Los planes están en la tabla `plans`. El código no cambia; el nombre, el precio, el máximo de empleados y los módulos los edita el administrador desde `/admin/configuracion`:
+
+  | Código (`plan_code`) | Nombre inicial | Precio | Empleados | Módulos opcionales |
+  | --- | --- | --- | --- | --- |
+  | `operativo` | Básico | 20 USD | 20 | Fichajes y Sueldos |
+  | `profesional` | Profesional | 40 USD | 100 | Fichajes, Sueldos y Estadísticas |
+  | `a_medida` | Enterprise | A convenir | Sin límite | Fichajes, Sueldos y Estadísticas |
+
+- Horarios, francos, vacaciones, empleados y configuración están en todos los planes. Los módulos opcionales (`plans.modules`) son `fichajes`, `sueldos` y `estadisticas`. Si el plan no incluye uno, desaparece del menú, su ruta lleva al inicio y, en el caso de Sueldos, también se oculta la tarjeta de sueldo del inicio del empleado.
+- En el código se pregunta por módulo y no por plan: `hasModule("estadisticas")` de `lib/plans.js`. Así, si el administrador cambia qué incluye cada plan, no hay que tocar el código.
+- La página de Precios lee los planes de la base, así que muestra siempre los mismos nombres, precios y módulos que el sistema.
 - Cada empresa tiene un plan (`companies.plan_code`), que se elige al crearla y se cambia desde `/admin/empresas`. No se puede pasar a un plan con menos lugar que los empleados activos.
 - La base controla el máximo al dar de alta o reactivar empleados (`employees_limit_guard`). El empleador ve su plan en Configuración.
+
+### Solicitudes de demostración
+
+El formulario de `/price` guarda la solicitud en `demo_requests` con la función pública `request_demo` (email obligatorio; nombre, empresa y plan de interés opcionales). Si el mismo email vuelve a enviar dentro del día, se actualiza la solicitud abierta en lugar de duplicarla, y hay un tope general de 60 solicitudes por hora. Solo el administrador puede leerlas.
+
+En `/admin/solicitudes` el administrador las ve por estado (Nueva, Contactada, Empresa creada, Descartada), agrega notas internas y, con **Crear empresa**, abre el alta de `/admin/empresas` precargada con los datos de la solicitud. Al crear la empresa, la solicitud queda vinculada y pasa a «Empresa creada». El menú y el inicio del administrador muestran cuántas hay sin responder.
 
 ### Estructura de la empresa
 
@@ -210,7 +227,8 @@ El esquema está en [`database/schema.sql`](./database/schema.sql) y se ejecuta 
 | --- | --- |
 | `companies` | Empresa: razón social y fechas de auditoría. |
 | `system_admins` | Administradores de plataforma, separados de las cuentas asociadas a una empresa. |
-| `plans` | Planes disponibles, precio mensual, descripción y límite de empleados. |
+| `plans` | Planes disponibles, precio mensual, descripción, límite de empleados y módulos incluidos. |
+| `demo_requests` | Solicitudes de demostración de la página de Precios y su seguimiento por el administrador. |
 | `departments` | Departamentos asociados a una empresa. |
 | `branches` | Sucursales de la empresa, con dirección opcional. |
 | `job_positions` | Puestos o roles laborales disponibles en una empresa. |
@@ -274,5 +292,6 @@ Las claves foráneas compuestas mantienen las relaciones dentro de la misma empr
 | `register_attendance`, `import_attendance` | Registro individual e importación de fichajes; la importación devuelve el resultado por fila. |
 | `admin_list_companies`, `admin_set_company_status` | Listado, suspensión y reactivación de empresas para el administrador del sistema. |
 | `admin_update_plan`, `admin_set_company_plan`, `admin_dashboard` | Edición y asignación de planes, límites de empleados y métricas del administrador. |
+| `request_demo`, `admin_update_demo_request` | Envío público de una solicitud de demostración y su seguimiento por el administrador. |
 | `admin_update_profile`, `set_my_profile_photo` | Actualización del perfil del administrador y de la foto de perfil del usuario. |
 | `mark_password_changed`, `touch_last_login` | Contraseña provisoria reemplazada y último ingreso. |

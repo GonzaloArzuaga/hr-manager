@@ -14,6 +14,7 @@ import { horariosData } from "../../data/horariosData";
 import { vacacionesData } from "../../data/vacacionesData";
 import { entitlementFor, store } from "../../lib/store";
 import { clockIn, clockOut } from "../../lib/api";
+import { hasModule } from "../../lib/plans";
 import { getWeekStart, parseDateKey, toDateKey } from "../../lib/format";
 
 function Icon({ path, className = "h-4 w-4" }) {
@@ -183,6 +184,7 @@ export default function DashboardEmployee() {
               requestedDays={nextVacation?.days ?? 0}
               statusLabel={nextVacation ? (nextVacation.status === "Aprobada" ? "Aprobada" : "En Revisión") : "Sin pedidos"}
             />
+            {hasModule("sueldos") && (
             <LatestPayrollDashboardCard
               amount={
                 isCurrentPayrollPending
@@ -200,6 +202,7 @@ export default function DashboardEmployee() {
               period={currentPayroll.period}
               status={isCurrentPayrollPending ? "Pendiente" : "Registrado"}
             />
+            )}
           </section>
 
           <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">

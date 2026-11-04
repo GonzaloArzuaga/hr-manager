@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import PasswordForm from "../../components/PasswordForm";
 import { adminUpdatePlan, adminUpdateProfile, listPlans, updatePassword } from "../../lib/api";
 import { toast } from "../../lib/feedback";
+import { allModuleKeys, planModules } from "../../lib/plans";
 import { store } from "../../lib/store";
 
 const inputClassName =
@@ -14,11 +15,21 @@ function PlanEditor({ plan, onSaved }) {
     monthly_price: plan.monthly_price ?? "",
     max_employees: plan.max_employees ?? "",
     description: plan.description ?? "",
+    modules: Array.isArray(plan.modules) ? plan.modules : allModuleKeys,
   });
   const [saving, setSaving] = useState(false);
 
   function update(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  }
+
+  function toggleModule(key) {
+    setForm((current) => ({
+      ...current,
+      modules: current.modules.includes(key)
+        ? current.modules.filter((item) => item !== key)
+        : allModuleKeys.filter((item) => item === key || current.modules.includes(item)),
+    }));
   }
 
   async function submit(event) {
@@ -73,6 +84,37 @@ function PlanEditor({ plan, onSaved }) {
           <input className={inputClassName} name="description" onChange={update} value={form.description} />
         </label>
       </div>
+      <fieldset className="mt-3">
+        <legend className={labelClassName}>Módulos incluidos</legend>
+        <p className="mt-0.5 text-[0.5625rem] text-slate-500">
+          Horarios, francos, vacaciones y empleados están en todos los planes.
+        </p>
+        <div className="mt-1.5 grid grid-cols-1 gap-1.5">
+          {planModules.map((module) => {
+            const checked = form.modules.includes(module.key);
+            return (
+              <label
+                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-[0.625rem] transition-colors ${
+                  checked ? "border-blue-200 bg-blue-50/70 text-blue-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+                key={module.key}
+              >
+                <input
+                  checked={checked}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  name={`module-${module.key}`}
+                  onChange={() => toggleModule(module.key)}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-semibold">{module.label}</span>
+                  <span className="block text-[0.5625rem] text-slate-500">{module.detail}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
       <div className="mt-3 flex justify-end">
         <button
           className="rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-60"

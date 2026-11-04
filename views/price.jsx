@@ -1,9 +1,59 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
+import Select from "../components/Select";
+import { listPlans, requestDemo } from "../lib/api";
+import { planModules } from "../lib/plans";
 
-const plans = [
+// Presentación de cada plan. Nombre, precio, límite de empleados y módulos
+// salen de la tabla plans (los edita el administrador); esto es lo visual.
+const planLooks = {
+  operativo: { icon: "domain", support: "Soporte técnico básico" },
+  profesional: { icon: "verified", popular: true, support: "Soporte prioritario técnico 24/7" },
+  a_medida: {
+    icon: "corporate",
+    support: "Soporte prioritario técnico 24/7",
+    extra: "Cláusula de blindaje y consultoría jurídica directa",
+  },
+};
+
+const moduleFeatureLabels = {
+  fichajes: "Control de fichajes e importación desde Excel",
+  sueldos: "Sueldos y recibos digitales",
+  estadisticas: "Estadísticas de demanda de personal",
+};
+
+function toCard(plan) {
+  const look = planLooks[plan.code] ?? { icon: "domain", support: "Soporte técnico" };
+  const custom = plan.monthly_price === null || plan.monthly_price === undefined;
+  const modules = Array.isArray(plan.modules) ? plan.modules : planModules.map((module) => module.key);
+  return {
+    code: plan.code,
+    name: plan.name,
+    icon: look.icon,
+    popular: look.popular,
+    description: plan.description ?? "",
+    price: custom ? "A Medida" : `$${Number(plan.monthly_price).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`,
+    priceNote: custom ? "Cotización adaptada a nómina" : undefined,
+    features: [
+      {
+        label: plan.max_employees ? `Hasta ${plan.max_employees} empleados registrados` : "Empleados sin límite, hecho a la medida de tu empresa",
+        included: true,
+      },
+      { label: "Horarios, francos y vacaciones", included: true },
+      ...planModules.map((module) => ({ label: moduleFeatureLabels[module.key], included: modules.includes(module.key) })),
+      { label: look.support, included: true },
+      ...(look.extra ? [{ label: look.extra, included: true }] : []),
+    ],
+    action: `Seleccionar Plan ${plan.name}`,
+    actionIcon: "arrow",
+  };
+}
+
+// Si la base no responde se muestran los planes publicados
+const fallbackPlans = [
   {
+    code: "operativo",
     name: "Básico",
     icon: "domain",
     description:
@@ -18,6 +68,7 @@ const plans = [
     actionIcon: "arrow",
   },
   {
+    code: "profesional",
     name: "Profesional",
     icon: "verified",
     description:
@@ -32,6 +83,7 @@ const plans = [
     actionIcon: "arrow",
   },
   {
+    code: "a_medida",
     name: "Enterprise",
     icon: "corporate",
     description:
@@ -166,7 +218,7 @@ function PricingCard({ onSelectPlan, plan }) {
               ? "bg-blue-900 text-white shadow-md hover:bg-blue-950"
               : "bg-blue-50 text-blue-900 hover:bg-blue-100"
           }`}
-          onClick={() => onSelectPlan(plan.name)}
+          onClick={() => onSelectPlan(plan.code)}
           type="button"
         >
           <span>{plan.action}</span>
@@ -177,11 +229,145 @@ function PricingCard({ onSelectPlan, plan }) {
   );
 }
 
-export default function Price() {
-  const [selectedPlan, setSelectedPlan] = React.useState("Profesional");
+function DemoForm({ plans, selectedPlan, setSelectedPlan }) {
+  const [form, setForm] = useState({ email: "", contactName: "", companyName: "" });
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [sentTo, setSentTo] = useState("");
 
-  function selectPlan(planName) {
-    setSelectedPlan(planName);
+  function update(event) {
+    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    setError("");
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSending(true);
+    setError("");
+    try {
+      await requestDemo({ ...form, planCode: selectedPlan });
+      setSentTo(form.email.trim());
+      setForm({ email: "", contactName: "", companyName: "" });
+    } catch (sendError) {
+      setError(sendError.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const fieldClass =
+    "w-full rounded-lg border border-transparent bg-[#eef3ff] px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200";
+  const labelClass = "mb-1.5 block text-sm font-medium text-slate-700";
+
+  if (sentTo) {
+    return (
+      <div className="space-y-3 py-2 text-center" role="status">
+        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+          <Icon className="h-6 w-6" name="check" />
+        </span>
+        <p className="text-base font-bold text-slate-900">¡Recibimos tu solicitud!</p>
+        <p className="text-sm leading-relaxed text-slate-600">
+          Un especialista te va a escribir a <strong>{sentTo}</strong> para coordinar la demostración.
+        </p>
+        <button className="text-sm font-semibold text-blue-800 hover:underline" onClick={() => setSentTo("")} type="button">
+          Enviar otra solicitud
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="space-y-4" onSubmit={submit}>
+      <div>
+        <label className={labelClass} htmlFor="demo-email">
+          Correo electrónico
+        </label>
+        <input
+          autoComplete="email"
+          className={fieldClass}
+          id="demo-email"
+          maxLength={254}
+          name="email"
+          onChange={update}
+          placeholder="nombre@empresa.com"
+          required
+          type="email"
+          value={form.email}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className={labelClass} htmlFor="demo-name">
+            Nombre y apellido
+          </label>
+          <input
+            autoComplete="name"
+            className={fieldClass}
+            id="demo-name"
+            maxLength={120}
+            name="contactName"
+            onChange={update}
+            placeholder="Opcional"
+            value={form.contactName}
+          />
+        </div>
+        <div>
+          <label className={labelClass} htmlFor="demo-company">
+            Empresa
+          </label>
+          <input
+            autoComplete="organization"
+            className={fieldClass}
+            id="demo-company"
+            maxLength={160}
+            name="companyName"
+            onChange={update}
+            placeholder="Opcional"
+            value={form.companyName}
+          />
+        </div>
+      </div>
+      <div>
+        <label className={labelClass} htmlFor="demo-plan">
+          Tipo de Plan interesado
+        </label>
+        <Select className={fieldClass} id="demo-plan" name="plan" onChange={(event) => setSelectedPlan(event.target.value)} required value={selectedPlan}>
+          {plans.map((plan) => (
+            <option key={plan.code} value={plan.code}>
+              {plan.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {error}
+        </p>
+      )}
+      <button
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#082f91] px-4 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-60"
+        disabled={sending}
+        type="submit"
+      >
+        {sending ? "Enviando..." : "Coordinar con un Especialista"}
+        <Icon className="h-4 w-4" name="calendar" />
+      </button>
+    </form>
+  );
+}
+
+export default function Price() {
+  const [plans, setPlans] = useState(fallbackPlans);
+  const [selectedPlan, setSelectedPlan] = useState("profesional");
+
+  useEffect(() => {
+    listPlans()
+      .then((rows) => rows.length && setPlans(rows.map(toCard)))
+      .catch(() => {});
+  }, []);
+
+  function selectPlan(planCode) {
+    setSelectedPlan(planCode);
     document.getElementById("contacto")?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -214,7 +400,7 @@ export default function Price() {
           <div className="mt-8 grid grid-cols-1 items-stretch gap-6 lg:grid-cols-3">
             {plans.map((plan) => (
               <PricingCard
-                key={plan.name}
+                key={plan.code}
                 onSelectPlan={selectPlan}
                 plan={plan}
               />
@@ -255,67 +441,7 @@ export default function Price() {
               <h3 className="mb-4 text-lg font-bold text-slate-900">
                 Agendar Demo Guiada
               </h3>
-              <form
-                className="space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const formData = new FormData(event.currentTarget);
-                  const email = formData.get("email");
-                  const plan = formData.get("plan");
-                  const subject = encodeURIComponent(
-                    "Solicitud de demo guiada - HRManager",
-                  );
-                  const body = encodeURIComponent(
-                    `Correo corporativo: ${email}\nTipo de Plan interesado: ${plan}`,
-                  );
-                  window.location.href = `mailto:soporte@hrmanager.com.ar?subject=${subject}&body=${body}`;
-                }}
-              >
-                <div>
-                  <label
-                    className="mb-1.5 block text-sm font-medium text-slate-700"
-                    htmlFor="demo-email"
-                  >
-                    Correo Electronico
-                  </label>
-                  <input
-                    autoComplete="email"
-                    className="w-full rounded-lg border border-transparent bg-[#eef3ff] px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    id="demo-email"
-                    name="email"
-                    placeholder="nombre@empresa.com"
-                    required
-                    type="email"
-                  />
-                </div>
-                <div>
-                  <label
-                    className="mb-1.5 block text-sm font-medium text-slate-700"
-                    htmlFor="demo-plan"
-                  >
-                    Tipo de Plan interesado
-                  </label>
-                  <select
-                    className="w-full rounded-lg border border-transparent bg-[#eef3ff] px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    id="demo-plan"
-                    name="plan"
-                    onChange={(event) => setSelectedPlan(event.target.value)}
-                    value={selectedPlan}
-                    required
-                  >
-                    <option value="Básico">Básico</option>
-                    <option value="Profesional">Profesional</option>
-                    <option value="Enterprise">Enterprise</option>
-                  </select>
-                </div>
-                <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#082f91] px-4 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                  type="submit"
-                >
-                  Coordinar con un Especialista
-                  <Icon className="h-4 w-4" name="calendar" />
-                </button>
-              </form>
+              <DemoForm plans={plans} selectedPlan={selectedPlan} setSelectedPlan={setSelectedPlan} />
               <p className="mt-4 text-center text-xs text-slate-500">
                 Usaremos tus datos únicamente para coordinar la demostración.
               </p>

@@ -7,6 +7,7 @@ import { currentPath, interceptLinks, navigate, usePath } from "./lib/router";
 import AppShell from "./components/AppShell";
 import FeedbackHost from "./components/FeedbackHost";
 import { loadNotifications, stopNotifications } from "./lib/notifications";
+import { hasModule, moduleForPath } from "./lib/plans";
 
 // Páginas públicas: no requieren sesión
 const publicViews = {
@@ -45,6 +46,7 @@ const employeeViews = {
 const adminViews = {
   "/admin": () => import("./views/admin/AdminInicio"),
   "/admin/empresas": () => import("./views/admin/AdminEmpresas"),
+  "/admin/solicitudes": () => import("./views/admin/AdminSolicitudes"),
   "/admin/configuracion": () => import("./views/admin/AdminConfiguracion"),
 };
 
@@ -53,6 +55,25 @@ const viewProps = {
   "/configuracion": { userType: "employer" },
   "/employee/configuration": { userType: "employee" },
 };
+
+// Rutas de versiones anteriores (en castellano). Siguen funcionando porque hay
+// notificaciones guardadas y correos de recuperación que las usan.
+const legacyExact = {
+  "/precios": "/price",
+  "/sobre-nosotros": "/about",
+  "/recuperar-contrasena": "/login/recover",
+  "/nueva-contrasena": "/login/change-password",
+  "/cambiar-contrasena": "/login/change-temporary-password",
+  "/empleador/configuracion": "/employer/configuration",
+  "/empleado/configuracion": "/employee/configuration",
+};
+
+function legacyTarget(path) {
+  if (legacyExact[path]) return legacyExact[path];
+  const match = path.match(/^\/(empleador|empleado)(\/.*)?$/);
+  if (!match) return null;
+  return `${match[1] === "empleador" ? "/employer" : "/employee"}${match[2] ?? ""}`;
+}
 
 function FullScreenMessage({ title, children }) {
   return (
@@ -90,11 +111,18 @@ function viewsFor(account) {
 
 function isKnownPath(path) {
   return Boolean(
-    publicViews[path] || employerViews[path] || employeeViews[path] || adminViews[path] || path === "/login/change-temporary-password",
+    publicViews[path] ||
+      employerViews[path] ||
+      employeeViews[path] ||
+      adminViews[path] ||
+      path === "/login/change-temporary-password" ||
+      legacyTarget(path),
   );
 }
 
 async function resolveRoute(path) {
+  const legacy = legacyTarget(path);
+  if (legacy) return { redirect: `${legacy}${window.location.search}${window.location.hash}` };
   if (publicViews[path]) {
     // Con sesión iniciada, el login lleva directo al panel
     if (path === "/login") {
@@ -150,6 +178,8 @@ async function resolveRoute(path) {
   if (!views[path]) return { redirect: homeFor(account) };
 
   await freshData(!inShell);
+  // Módulos que no incluye el plan de la empresa
+  if (!hasModule(moduleForPath(path))) return { redirect: homeFor(account) };
   loadNotifications();
   return { load: views[path], props: viewProps[path], shell: true };
 }

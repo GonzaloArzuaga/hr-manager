@@ -34,7 +34,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 - Gráficos: `components/ChartCanvas.jsx` (Chart.js). Fichajes del empleador: RPC `register_attendance`; las bajas de fichajes van directo a la tabla (RLS del empleador).
 - `views/` contiene una vista por página, agrupada por área:
   - `views/`: páginas públicas y de acceso (`capchat.jsx`, `landing.jsx`, `about.jsx`, `price.jsx`, `login.jsx`, `recoverPassword.jsx`, `newPassword.jsx`, `changeTemporaryPassword.jsx` y `error404.jsx`).
-  - `views/admin/`: inicio, gestión de empresas y configuración del administrador del sistema.
+  - `views/admin/`: inicio, gestión de empresas, solicitudes de demostración y configuración del administrador del sistema.
   - `views/empleador/`: panel, empleados, horarios, francos, vacaciones, sueldos, estadísticas y fichajes.
   - `views/empleado/`: panel personal, horarios, francos, vacaciones y sueldos.
   - `views/participante/configuration.jsx`: configuración compartida con contenido condicionado por rol.
@@ -77,6 +77,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 | `/employee/configuration` | Configuración del empleado |
 | `/admin` | Panel del administrador del sistema |
 | `/admin/empresas` | Empresas, planes y estado de las cuentas |
+| `/admin/solicitudes` | Solicitudes de demostración |
 | `/admin/configuracion` | Configuración del administrador y planes |
 | `/configuracion` | Alias de configuración del empleador |
 
@@ -182,3 +183,10 @@ El esquema completo, con políticas y funciones, está en `database/schema.sql`.
 6. Si tocas Sidebar, navegación, identidad o autenticación demo, verifica ambos roles y las rutas asociadas.
 7. Para cambios funcionales, valida la interfaz si es posible y ejecuta `npm run build`. Para cambios solo documentales no hace falta compilar, salvo que existan pruebas documentales.
 8. No agregues dependencias salvo que la solución realmente las requiera.
+
+## Planes y módulos
+
+- Para mostrar u ocultar algo según el plan, usar `hasModule("fichajes" | "sueldos" | "estadisticas")` de `lib/plans.js`. No comparar nombres de planes: el administrador los puede cambiar. El código de cada plan (`operativo`, `profesional`, `a_medida`) está en `store.company.plan.code`.
+- Un módulo nuevo se agrega en `planModules` (`lib/plans.js`), en la restricción `plans_modules_valid` y en `admin_update_plan`. Las rutas del panel se asocian al módulo por su segundo segmento (`/employer/<módulo>`).
+- `main.jsx` redirige las rutas viejas en castellano (`/empleador/...`, `/empleado/...`, `/precios`, `/nueva-contrasena`, etc.) a las nuevas, porque las notificaciones guardadas en la base y los correos ya enviados las usan.
+

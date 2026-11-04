@@ -40,6 +40,10 @@ BEGIN
   IF v_company IS NULL THEN
     RAISE EXCEPTION 'Primero corré seed_prueba.sql: no existe Empresa Test SRL';
   END IF;
+  -- 24 empleados superan el plan básico y las estadísticas son del profesional
+  UPDATE public.companies SET plan_code = 'profesional'
+   WHERE id = v_company AND plan_code = 'operativo'
+     AND EXISTS (SELECT 1 FROM public.plans WHERE code = 'profesional');
   SELECT id INTO v_employer FROM public.user_accounts
    WHERE company_id = v_company AND role = 'employer' ORDER BY id LIMIT 1;
 

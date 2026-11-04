@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { store } from "../lib/store";
-import { signOut } from "../lib/api";
+import { hasModule, moduleForPath } from "../lib/plans";
+import { countPendingDemoRequests, signOut } from "../lib/api";
 import NotificationBell from "./NotificationBell";
 
 const navigationItems = [
@@ -13,6 +14,12 @@ const navigationItems = [
     label: "Empresas",
     admin: "/admin/empresas",
     path: "M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01M9 18v.01",
+  },
+  {
+    label: "Solicitudes",
+    admin: "/admin/solicitudes",
+    badge: "pendingDemos",
+    path: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
   },
   {
     label: "Inicio",
@@ -115,9 +122,26 @@ export function UserAvatar({ className = "h-6 w-6 text-[0.5625rem]" }) {
 // (variant="drawer") desde la barra superior.
 export default function Sidebar({ activePath = "", variant = "desktop", onClose }) {
   const role = store.role ?? (store.isEmployer ? "employer" : "employee");
-  const items = navigationItems.filter((item) => item[role] && item.label !== "Configuración");
+  const items = navigationItems.filter(
+    (item) => item[role] && item.label !== "Configuración" && hasModule(moduleForPath(item[role])),
+  );
   const configurationItem = navigationItems.find((item) => item.label === "Configuración" && item[role]);
   const isDrawer = variant === "drawer";
+  const [badges, setBadges] = useState({});
+
+  // Solicitudes de demo sin responder (solo el administrador)
+  useEffect(() => {
+    if (role !== "admin") return undefined;
+    let active = true;
+    const load = () =>
+      countPendingDemoRequests().then((count) => active && setBadges((current) => ({ ...current, pendingDemos: count })));
+    load();
+    window.addEventListener("demo-requests-updated", load);
+    return () => {
+      active = false;
+      window.removeEventListener("demo-requests-updated", load);
+    };
+  }, [role]);
 
   return (
     <aside
@@ -193,6 +217,16 @@ export default function Sidebar({ activePath = "", variant = "desktop", onClose 
                   path={item.path}
                 />
                 <span>{item.label}</span>
+                {item.badge && badges[item.badge] > 0 && (
+                  <span
+                    aria-label={`${badges[item.badge]} sin responder`}
+                    className={`ml-auto rounded-full bg-amber-400 px-1.5 font-bold leading-relaxed text-slate-900 ${
+                      isDrawer ? "text-[0.6875rem]" : "text-[0.5rem]"
+                    }`}
+                  >
+                    {badges[item.badge]}
+                  </span>
+                )}
               </a>
             );
           })}

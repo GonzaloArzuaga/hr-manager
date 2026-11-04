@@ -1,17 +1,28 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ChartCanvas from "../../components/ChartCanvas";
-import { adminDashboard } from "../../lib/api";
+import { adminDashboard, countPendingDemoRequests } from "../../lib/api";
 import { store } from "../../lib/store";
 import { monthShort } from "../../lib/workforce";
 
-function MetricCard({ title, value, note }) {
-  return (
-    <article className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
+function MetricCard({ title, value, note, href, highlight = false }) {
+  const content = (
+    <>
       <div className="mb-2 text-[0.5625rem] font-bold uppercase tracking-wider text-slate-500">{title}</div>
-      <div className="text-3xl font-extrabold tracking-tight text-slate-900">{value}</div>
+      <div className={`text-3xl font-extrabold tracking-tight ${highlight ? "text-amber-700" : "text-slate-900"}`}>{value}</div>
       <p className="mt-2 text-[0.5625rem] text-slate-500">{note}</p>
-    </article>
+    </>
   );
+  const className = `block rounded-xl border bg-white p-4 shadow-sm sm:p-5 ${
+    highlight ? "border-amber-200 ring-1 ring-amber-100" : "border-slate-200/70"
+  }`;
+  if (href) {
+    return (
+      <a className={`${className} transition-colors hover:border-blue-300`} href={href}>
+        {content}
+      </a>
+    );
+  }
+  return <article className={className}>{content}</article>;
 }
 
 function Card({ title, subtitle, children, action }) {
@@ -35,9 +46,11 @@ const money = (value) =>
 export default function AdminInicio() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [pendingDemos, setPendingDemos] = useState(0);
 
   useEffect(() => {
     adminDashboard().then(setData).catch((loadError) => setError(loadError.message));
+    countPendingDemoRequests().then(setPendingDemos);
   }, []);
 
   const monthConfig = useMemo(() => {
@@ -113,7 +126,14 @@ export default function AdminInicio() {
 
           {data && (
             <>
-              <section aria-label="Indicadores" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <section aria-label="Indicadores" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <MetricCard
+                  highlight={pendingDemos > 0}
+                  href="/admin/solicitudes"
+                  note={pendingDemos ? "Pedidos de demo sin responder. Ver solicitudes →" : "No hay pedidos de demo sin responder"}
+                  title="Solicitudes nuevas"
+                  value={pendingDemos}
+                />
                 <MetricCard
                   note={`${data.companies - data.active_companies} suspendidas`}
                   title="Empresas activas"

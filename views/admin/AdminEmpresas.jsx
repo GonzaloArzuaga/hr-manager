@@ -5,8 +5,11 @@ import {
   adminResetEmployerPassword,
   adminSetCompanyPlan,
   adminSetCompanyStatus,
+  adminUpdateDemoRequest,
+  listDemoRequests,
   listPlans,
 } from "../../lib/api";
+import { navigate } from "../../lib/router";
 import { confirmDialog, toast } from "../../lib/feedback";
 import Select from "../../components/Select";
 
@@ -93,6 +96,8 @@ export default function AdminEmpresas() {
   const [credentials, setCredentials] = useState(null);
   const [search, setSearch] = useState("");
   const [plans, setPlans] = useState([]);
+  // Solicitud de demo desde la que se está dando de alta la empresa (/admin/empresas?solicitud=ID)
+  const [fromRequest, setFromRequest] = useState(null);
 
   async function reload() {
     setLoading(true);
@@ -108,7 +113,31 @@ export default function AdminEmpresas() {
   useEffect(() => {
     reload();
     listPlans().then(setPlans).catch(() => setPlans([]));
+    const requestId = Number(new URLSearchParams(window.location.search).get("solicitud"));
+    if (requestId) {
+      listDemoRequests()
+        .then((requests) => {
+          const request = requests.find((item) => item.id === requestId);
+          if (!request) return;
+          setFromRequest(request);
+          setForm((current) => ({
+            ...current,
+            legalName: request.company_name ?? "",
+            employerName: request.contact_name ?? "",
+            employerEmail: request.email,
+            planCode: request.plan_code ?? current.planCode,
+          }));
+          document.getElementById("company-name")?.focus();
+        })
+        .catch((loadError) => toast.error(loadError.message));
+    }
   }, []);
+
+  function clearRequest() {
+    setFromRequest(null);
+    setForm(emptyForm);
+    navigate("/admin/empresas", { replace: true });
+  }
 
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("es");
@@ -144,6 +173,16 @@ export default function AdminEmpresas() {
         password: result.temporaryPassword,
       });
       toast.success(`Se creó ${form.legalName.trim()}.`);
+      if (fromRequest) {
+        try {
+          await adminUpdateDemoRequest(fromRequest.id, { status: "converted", companyId: result.companyId });
+          toast.info(`La solicitud de ${fromRequest.email} quedó como «Empresa creada».`);
+        } catch (linkError) {
+          toast.error(linkError.message);
+        }
+        setFromRequest(null);
+        navigate("/admin/empresas", { replace: true });
+      }
       setForm(emptyForm);
       await reload();
     } catch (submitError) {
@@ -245,6 +284,16 @@ export default function AdminEmpresas() {
                 las puede ajustar desde Configuración.
               </p>
             </div>
+            {fromRequest && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50/80 px-3 py-2 text-[0.625rem] text-blue-900">
+                <span>
+                  Completando la solicitud de demo de <strong>{fromRequest.email}</strong>. Revisá los datos antes de crear la empresa.
+                </span>
+                <button className="font-semibold text-blue-700 hover:underline" onClick={clearRequest} type="button">
+                  No usar la solicitud
+                </button>
+              </div>
+            )}
             <form className="space-y-3" onSubmit={submit}>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <div>
