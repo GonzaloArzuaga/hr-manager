@@ -44,16 +44,17 @@ const employeeViews = {
 };
 
 const adminViews = {
-  "/admin": () => import("./views/admin/AdminInicio"),
-  "/admin/empresas": () => import("./views/admin/AdminEmpresas"),
-  "/admin/solicitudes": () => import("./views/admin/AdminSolicitudes"),
-  "/admin/configuracion": () => import("./views/admin/AdminConfiguracion"),
+  "/admin": () => import("./views/admin/dashboardAdmin"),
+  "/admin/empresas": () => import("./views/admin/empresasAdmin"),
+  "/admin/solicitudes": () => import("./views/admin/solicitudesAdmin"),
+  "/admin/configuration": () => import("./views/participante/configuration"),
 };
 
 const viewProps = {
   "/employer/configuration": { userType: "employer" },
   "/configuracion": { userType: "employer" },
   "/employee/configuration": { userType: "employee" },
+  "/admin/configuration": { userType: "admin" },
 };
 
 // Rutas de versiones anteriores (en castellano). Siguen funcionando porque hay
@@ -66,6 +67,7 @@ const legacyExact = {
   "/cambiar-contrasena": "/login/change-temporary-password",
   "/empleador/configuracion": "/employer/configuration",
   "/empleado/configuracion": "/employee/configuration",
+  "/admin/configuracion": "/admin/configuration",
 };
 
 function legacyTarget(path) {

@@ -87,7 +87,7 @@ function CredentialsNotice({ credentials, onClose }) {
   );
 }
 
-export default function AdminEmpresas() {
+export default function EmpresasAdmin() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);

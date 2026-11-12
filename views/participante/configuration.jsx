@@ -2,7 +2,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import { store } from "../../lib/store";
 import CompanyCatalogs from "../../components/CompanyCatalogs";
-import { removeProfilePhoto, updatePassword as changePassword, uploadProfilePhoto } from "../../lib/api";
+import PasswordForm from "../../components/PasswordForm";
+import {
+  adminUpdatePlan,
+  adminUpdateProfile,
+  listPlans,
+  removeProfilePhoto,
+  updatePassword,
+  updatePassword as changePassword,
+  uploadProfilePhoto,
+} from "../../lib/api";
+import { allModuleKeys, planModules } from "../../lib/plans";
 import {
   getBusinessRules,
   saveBusinessRules,
@@ -76,7 +86,237 @@ function PasswordRequirement({ valid, children }) {
   );
 }
 
-export default function Configuration({ userType = "employer" }) {
+const planInputClassName =
+  "mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] font-normal focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500";
+const planLabelClassName = "block text-[0.6875rem] font-semibold text-slate-700";
+
+function PlanEditor({ plan, onSaved }) {
+  const [form, setForm] = useState({
+    ...plan,
+    monthly_price: plan.monthly_price ?? "",
+    max_employees: plan.max_employees ?? "",
+    description: plan.description ?? "",
+    modules: Array.isArray(plan.modules) ? plan.modules : allModuleKeys,
+  });
+  const [saving, setSaving] = useState(false);
+
+  function update(event) {
+    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  }
+
+  function toggleModule(key) {
+    setForm((current) => ({
+      ...current,
+      modules: current.modules.includes(key)
+        ? current.modules.filter((item) => item !== key)
+        : allModuleKeys.filter((item) => item === key || current.modules.includes(item)),
+    }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await adminUpdatePlan(form);
+      toast.success(`Se guardó el plan ${form.name}.`);
+      onSaved();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="rounded-lg border border-slate-200/80 p-3" onSubmit={submit}>
+      <p className="mb-2 text-[0.5625rem] font-bold uppercase tracking-wider text-slate-400">
+        Código: {plan.code}
+      </p>
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <label className={planLabelClassName}>
+          Nombre
+          <input className={planInputClassName} name="name" onChange={update} required value={form.name} />
+        </label>
+        <label className={planLabelClassName}>
+          Precio mensual (USD)
+          <input
+            className={planInputClassName}
+            min="0"
+            name="monthly_price"
+            onChange={update}
+            placeholder="Vacío: a convenir"
+            step="0.01"
+            type="number"
+            value={form.monthly_price}
+          />
+        </label>
+        <label className={planLabelClassName}>
+          Máximo de empleados activos
+          <input
+            className={planInputClassName}
+            min="1"
+            name="max_employees"
+            onChange={update}
+            placeholder="Vacío: sin límite"
+            type="number"
+            value={form.max_employees}
+          />
+        </label>
+        <label className={planLabelClassName}>
+          Descripción
+          <input className={planInputClassName} name="description" onChange={update} value={form.description} />
+        </label>
+      </div>
+      <fieldset className="mt-3">
+        <legend className={planLabelClassName}>Módulos incluidos</legend>
+        <p className="mt-0.5 text-[0.5625rem] text-slate-500">
+          Horarios, francos, vacaciones y empleados están en todos los planes.
+        </p>
+        <div className="mt-1.5 grid grid-cols-1 gap-1.5">
+          {planModules.map((module) => {
+            const checked = form.modules.includes(module.key);
+            return (
+              <label
+                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-[0.625rem] transition-colors ${
+                  checked
+                    ? "border-blue-200 bg-blue-50/70 text-blue-900"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+                key={module.key}
+              >
+                <input
+                  checked={checked}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  name={`module-${module.key}`}
+                  onChange={() => toggleModule(module.key)}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-semibold">{module.label}</span>
+                  <span className="block text-[0.5625rem] text-slate-500">{module.detail}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      <div className="mt-3 flex justify-end">
+        <button
+          className="rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-60"
+          disabled={saving}
+          type="submit"
+        >
+          {saving ? "Guardando..." : "Guardar plan"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AdminConfiguration() {
+  const [plans, setPlans] = useState([]);
+  const [name, setName] = useState(store.user?.name ?? "");
+  const [savingName, setSavingName] = useState(false);
+
+  function loadPlans() {
+    listPlans()
+      .then(setPlans)
+      .catch((error) => toast.error(error.message));
+  }
+
+  useEffect(loadPlans, []);
+
+  async function saveName(event) {
+    event.preventDefault();
+    setSavingName(true);
+    try {
+      await adminUpdateProfile(name.trim());
+      toast.success("Se guardó tu nombre.");
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-slate-800 antialiased">
+      <main className="min-w-0 flex-1 px-4 py-4 md:px-5">
+        <div className="mx-auto max-w-[93.75rem] space-y-4">
+          <header>
+            <nav
+              aria-label="Ruta de navegación"
+              className="mb-1 flex items-center gap-2 text-[0.5625rem] font-semibold uppercase tracking-wider text-slate-500"
+            >
+              <span>Administración del sistema</span>
+              <span aria-hidden="true">›</span>
+              <span className="text-blue-700">Configuración</span>
+            </nav>
+            <h1 className="page-title">Configuración</h1>
+          </header>
+
+          <section className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+            <div className="mb-3 border-b border-slate-100 pb-2.5">
+              <h2 className="text-sm font-bold tracking-tight text-slate-900">Planes</h2>
+              <p className="mt-0.5 text-[0.625rem] text-slate-500">
+                El máximo de empleados se controla al dar de alta o reactivar empleados. Los cambios valen desde ese momento para
+                todas las empresas del plan.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+              {plans.map((plan) => (
+                <PlanEditor key={`${plan.code}-${plan.updated_at}`} onSaved={loadPlans} plan={plan} />
+              ))}
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <section className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+              <div className="mb-3 border-b border-slate-100 pb-2.5">
+                <h2 className="text-sm font-bold tracking-tight text-slate-900">Mi cuenta</h2>
+                <p className="mt-0.5 text-[0.625rem] text-slate-500">{store.user?.email}</p>
+              </div>
+              <form className="space-y-3" onSubmit={saveName}>
+                <label className={planLabelClassName}>
+                  Nombre visible
+                  <input
+                    className={planInputClassName}
+                    onChange={(event) => setName(event.target.value)}
+                    required
+                    value={name}
+                  />
+                </label>
+                <div className="flex justify-end">
+                  <button
+                    className="rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-60"
+                    disabled={savingName}
+                    type="submit"
+                  >
+                    {savingName ? "Guardando..." : "Guardar nombre"}
+                  </button>
+                </div>
+              </form>
+            </section>
+            <section className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+              <div className="mb-3 border-b border-slate-100 pb-2.5">
+                <h2 className="text-sm font-bold tracking-tight text-slate-900">Cambiar contraseña</h2>
+              </div>
+              <PasswordForm
+                onSubmit={async (password) => {
+                  await updatePassword(password);
+                  toast.success("Tu contraseña se actualizó.");
+                }}
+                submitLabel="Cambiar contraseña"
+              />
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function ParticipantConfiguration({ userType = "employer" }) {
   const isEmployer = userType !== "employee";
   const user = {
     name: store.user?.name ?? "",
@@ -884,4 +1124,9 @@ export default function Configuration({ userType = "employer" }) {
       </main>
     </div>
   );
+}
+
+export default function Configuration({ userType = "employer" }) {
+  if (userType === "admin") return <AdminConfiguration />;
+  return <ParticipantConfiguration userType={userType} />;
 }

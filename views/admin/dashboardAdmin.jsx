@@ -43,7 +43,7 @@ function Card({ title, subtitle, children, action }) {
 const money = (value) =>
   Number(value ?? 0).toLocaleString("es-AR", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
-export default function AdminInicio() {
+export default function DashboardAdmin() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [pendingDemos, setPendingDemos] = useState(0);
