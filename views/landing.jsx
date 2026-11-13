@@ -2,7 +2,6 @@ import React from "react";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import PricingRedirectCard from "../components/cards/PricingRedirectCard";
-import valeriaRossi from "../data/valeria-rossi.png";
 
 const capabilities = [
   {
@@ -161,7 +160,7 @@ export default function Landing() {
               <img
                 alt="Valeria Rossi, gerente de Recursos Humanos"
                 className="h-full max-h-[26.25rem] min-h-64 w-full object-cover object-top lg:max-h-none"
-                src={valeriaRossi}
+                src="https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/images/reseniaValeria.png"
               />
             </div>
             <div className="flex flex-col justify-between gap-7 p-6 sm:p-8 lg:col-span-8 lg:p-10">

@@ -114,7 +114,8 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 ### Iconos e imágenes
 
 - Reutilizar `EmployeeIdentity` para representar a las personas en tablas y registros. El componente muestra foto cuando existe y, en su ausencia, las iniciales con el color indicado por `avatarStyle`.
-- Las fotos de demostración locales son `data/roberto-morales.png` y `data/valeria-rossi.png`. `data/employeeAvatars.js` asocia esas fotos a nombres completos normalizados; no inferir ni asignar fotos a otras personas.
+- Las imágenes públicas de marca y presentación se sirven desde el bucket público `images` de Supabase: `favicon.png` se usa como favicon en `index.html` y como imagen en `views/capchat.jsx`; `logo.png` se usa en `components/Navbar.jsx`; `404.png` se usa en `views/error404.jsx`; `reseniaValeria.png` se usa en el caso de éxito de `views/landing.jsx`.
+- Los archivos locales `data/roberto-morales.png` y `data/valeria-rossi.png` no están referenciados actualmente por el código; no asumir que por estar en `data/` se usan ni que están asociados a empleados.
 - Las fotos y nombres son ilustrativos. No introducir imágenes personales reales ni datos de producción.
 - Los controles con iconos necesitan nombre accesible; ocultar con `aria-hidden` los iconos decorativos. Se usan SVG inline y Font Awesome según el patrón del componente o vista existente.
 

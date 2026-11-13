@@ -41,7 +41,7 @@ export default function Navbar({
             alt=""
             aria-hidden="true"
             className="h-9 w-9 object-contain"
-            src="/logo3.png"
+            src="https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/images/logo.png"
           />
           <span>HRManager</span>
         </a>

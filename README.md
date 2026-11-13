@@ -117,12 +117,12 @@ Para compilar: `npm run build` y `npm run preview`.
 ├── package.json
 ├── styles.css
 ├── components/              # shell, controles, feedback, gráficos y tarjetas
-├── data/                    # estructuras, reglas y recursos ilustrativos
+├── data/                    # estructuras, reglas y recursos ilustrativos; no todo archivo se importa
 ├── database/                # esquema, migraciones y datos de prueba
 ├── hooks/
 │   └── usePagination.js
 ├── lib/                     # API, store, Supabase, navegación y lógica compartida
-├── public/                  # imágenes públicas y favicon
+├── public/                  # recursos estáticos locales
 ├── supabase/functions/      # create-employee, update-employee-email y admin-companies
 └── views/
     ├── admin/
@@ -138,6 +138,17 @@ Para compilar: `npm run build` y `npm run preview`.
 - `lib/api.js`: alta de empleados, horarios, solicitudes, respuestas, sueldos y recibos, fichaje, reglas y contraseñas. Después de cada operación vuelve a cargar los datos.
 - `lib/router.js`: navegación sin recarga. Los enlaces internos cambian la dirección con la History API y solo se reemplaza el contenido; los botones Atrás y Adelante del navegador funcionan.
 - `components/AppShell.jsx`: marco de las pantallas con sesión. El menú lateral queda montado; en pantallas de menos de 1024 px se abre como cajón desde la barra superior.
+
+### Imágenes públicas
+
+Las imágenes públicas de marca y presentación se sirven desde el bucket `images` de Supabase:
+
+- `favicon.png`: favicon de la pestaña en `index.html` y logo de la pantalla pública `views/capchat.jsx`.
+- `logo.png`: logo del componente `components/Navbar.jsx`.
+- `404.png`: imagen de la página `views/error404.jsx`.
+- `reseniaValeria.png`: imagen del caso de éxito en `views/landing.jsx`.
+
+Los archivos locales `data/roberto-morales.png` y `data/valeria-rossi.png` permanecen en el repositorio, pero no están referenciados actualmente por el código.
 
 ### Estadísticas y fichajes del empleador
 

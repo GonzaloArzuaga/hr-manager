@@ -40,7 +40,7 @@ export default function Capchat() {
               <img
                 alt="Logo de HRManager"
                 className="h-7 w-7 flex-shrink-0 object-contain"
-                src="/favicon.png"
+                src="https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/images/favicon.png"
               />
               <h1 className="text-2xl font-semibold leading-none tracking-tight text-white md:text-3xl">
                 hrmanager.ar
