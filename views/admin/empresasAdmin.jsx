@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { CheckIcon } from "../../components/icons";
 import {
   adminCreateCompany,
   adminListCompanies,
@@ -344,9 +345,7 @@ export default function EmpresasAdmin() {
                   disabled={saving}
                   type="submit"
                 >
-                  <Icon className="h-3 w-3">
-                    <path d="M12 4v16m8-8H4" />
-                  </Icon>
+                  <CheckIcon />
                   {saving ? "Creando..." : "Crear empresa"}
                 </button>
               </div>

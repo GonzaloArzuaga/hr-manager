@@ -1,5 +1,6 @@
 import React, { Children, Fragment, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useExclusiveOverlay } from "../lib/overlays";
 
 // Desplegables propios del sistema. Reemplazan a <select> y a <datalist> con una lista
 // que ocupa el ancho del campo. Se usan igual que los nativos: value, onChange, name,
@@ -260,6 +261,7 @@ export default function Select({
   }
 
   useOutsideClose(open, useMemo(() => [buttonRef, panelRef], []), () => close(false));
+  useExclusiveOverlay(open, () => close(false));
 
   function openList() {
     if (disabled) return;

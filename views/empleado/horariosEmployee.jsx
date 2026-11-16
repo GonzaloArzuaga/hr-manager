@@ -437,10 +437,11 @@ export default function HorariosEmployee() {
               </button>
             </nav>
 
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-4 2xl:grid-cols-7">
+            {/* Vista semanal: los 7 días uno al lado del otro. En pantallas chicas la fila se desplaza de costado. */}
+            <div className="flex snap-x gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-7 md:overflow-visible md:pb-0" data-testid="week-row">
               {displayedDays.map((day) => (
                 <article
-                  className={`flex min-h-[7.875rem] flex-col rounded-xl border p-3.5 shadow-sm ${day.cardClass}`}
+                  className={`flex min-h-[7.875rem] min-w-[9.5rem] snap-start flex-col rounded-xl border p-2.5 shadow-sm md:min-w-0 ${day.cardClass}`}
                   key={day.dateValue}
                 >
                   <div>
@@ -456,7 +457,7 @@ export default function HorariosEmployee() {
                       }`}
                     >
                       <h3
-                        className={`text-xs font-bold ${
+                        className={`text-[0.6875rem] font-bold ${
                           day.isToday ? "text-blue-900" : "text-slate-800"
                         }`}
                       >

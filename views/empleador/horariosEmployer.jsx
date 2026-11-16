@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { employeeOptionLabel } from "../../data/employeeDirectory";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import PaginationControls from "../../components/PaginationControls";
 import EmployeeIdentity from "../../components/EmployeeIdentity";
@@ -139,11 +141,9 @@ function ScheduleTable({ onDelete, schedules }) {
                 <td className="employee-identity-cell px-5 py-3.5">
                   <EmployeeIdentity
                     avatarStyle={employee.avatarStyle}
+                    employeeId={employee.id}
                     department={employee.department}
                     name={employee.name}
-                    nameClassName="text-[0.625rem] leading-snug"
-                    size="lg"
-                    metadataClassName="text-[0.5625rem] font-normal"
                   />
                 </td>
                 <td className="px-5 py-3.5">
@@ -483,7 +483,7 @@ export default function HorariosEmployer() {
                       <option value="">Seleccionar empleado...</option>
                       {assignableEmployees.map((employee) => (
                         <option key={employee.id} value={employee.id}>
-                          {employee.name} (Leg. #{employee.id})
+                          {employeeOptionLabel(employee)}
                         </option>
                       ))}
                     </SelectField>
@@ -558,7 +558,7 @@ export default function HorariosEmployer() {
                     disabled={saving}
                     type="submit"
                   >
-                    <Icon className="text-xs" name="solid fa-circle-plus" />
+                    <CheckIcon />
                     <span>Asignar horario</span>
                   </button>
                 </div>

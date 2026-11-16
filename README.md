@@ -25,7 +25,7 @@ insert into public.system_admins (auth_user_id, display_name)
 select id, 'Nombre del administrador' from auth.users where email = 'email@admin.com';
 ```
 
-Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql` y `database/actualizacion_resultado_solicitudes.sql`.
+Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql` y `database/actualizacion_v2_planes.sql`.
 
 **Datos de demostración (opcional).** Después del seed se puede ejecutar `database/datos_demo_anual.sql`: agrega 20 empleados sin cuenta a "Empresa Test SRL" y un año completo de horarios, francos, vacaciones, fichajes y sueldos, para que Estadísticas y los historiales muestren datos. Se puede volver a ejecutar sin duplicar nada. Los recibos de esos sueldos no tienen PDF: al abrirlos el sistema avisa que son de demostración.
 
@@ -173,11 +173,28 @@ Los archivos locales `data/roberto-morales.png` y `data/valeria-rossi.png` perma
 - Cada empresa tiene un plan (`companies.plan_code`), que se elige al crearla y se cambia desde `/admin/empresas`. No se puede pasar a un plan con menos lugar que los empleados activos.
 - La base controla el máximo al dar de alta o reactivar empleados (`employees_limit_guard`). El empleador ve su plan en Configuración.
 
+- La página de Precios no tiene textos de planes escritos en el código: el límite de empleados y los módulos salen de `max_employees` y `modules`, y el resto de las características (soporte, beneficios) de `plans.features`, una lista `[{"label": "...", "included": true}]`. `plans.highlighted` marca el plan "Más popular". El administrador edita ambas cosas desde `/admin/configuration`.
+- Los planes se piden apenas abre una página pública (`getPublicPlans` de `lib/api.js`), así Precios los muestra sin esperar. Mientras llegan se ven tarjetas de carga y, si la base no responde, un aviso con "Reintentar".
+
 ### Solicitudes de demostración
 
 El formulario de `/price` guarda la solicitud en `demo_requests` con la función pública `request_demo` (email obligatorio; nombre, empresa y plan de interés opcionales). Si el mismo email vuelve a enviar dentro del día, se actualiza la solicitud abierta en lugar de duplicarla, y hay un tope general de 60 solicitudes por hora. Solo el administrador puede leerlas.
 
 En `/admin/solicitudes` el administrador las ve por estado (Nueva, Contactada, Empresa creada, Descartada), agrega notas internas y, con **Crear empresa**, abre el alta de `/admin/empresas` precargada con los datos de la solicitud. Al crear la empresa, la solicitud queda vinculada y pasa a «Empresa creada». El menú y el inicio del administrador muestran cuántas hay sin responder.
+
+### Francos que corresponden por mes
+
+En `/employer/francos` y en el inicio del empleador hay una tarjeta con los francos que corresponden en el mes: por empleado y en total, cuántos están aprobados, cuántos pendientes y cuántos faltan asignar. En Francos se puede elegir un mes futuro y ver el detalle por empleado. La cuenta está en `getMonthlyFrancoAllowance` de `data/businessRules.js`: francos por semana × (días del mes / 7), redondeado (con 2 por semana: 8 en febrero y 9 en el resto). El formulario de asignación usa la misma regla como máximo del mes.
+
+El empleado (al solicitar) y el empleador (al asignar) eligen los días con el mismo desplegable, `components/FrancoDatePicker.jsx`: un campo que muestra el mes y los días elegidos y, al abrirlo, el calendario del mes con los días que ya tienen franco marcados.
+
+### Vacaciones
+
+El empleador carga las vacaciones con dos campos separados, **Desde** y **Hasta**, sin límite de año: solo se bloquean los días pasados. La cantidad de días elegidos se ve en grande y hay un botón para cancelar la selección.
+
+### Videos de la demostración
+
+Los enlaces están en `data/demoVideos.js` y apuntan al bucket `videosAbout` de Supabase. Cada reproducción consume tráfico del plan gratuito (5 GB por mes); si alguna vez se acerca al límite, se pueden reemplazar por enlaces de YouTube "No listado", que el reproductor ya admite. Mientras el video carga se muestra un aviso sobre el reproductor. Al abrir una página pública se prepara el reproductor (`preloadDemoVideos` de `lib/demoVideos.js`); los MP4 no se descargan por adelantado para no gastar ese tráfico.
 
 ### Estructura de la empresa
 
@@ -193,7 +210,25 @@ Se sube desde Configuración (PNG, JPG o WEBP). El sistema la recorta en cuadrad
 
 ### Avisos y ventanas de confirmación
 
-Ninguna pantalla usa `alert`, `confirm` ni `prompt` del navegador. Las confirmaciones y los pedidos de datos (por ejemplo, el motivo de un rechazo) usan `confirmDialog` y `promptDialog`, y los resultados se informan con `toast`, todo desde `lib/feedback.js`. `components/FeedbackHost.jsx` los dibuja y está montado una sola vez en `main.jsx`.
+Ninguna pantalla usa `alert`, `confirm` ni `prompt` del navegador. Los botones que confirman un formulario (registrar, asignar, guardar, enviar) llevan el tilde y los que agregan un elemento a una lista llevan "+" (`components/icons.jsx`). Las confirmaciones y los pedidos de datos (por ejemplo, el motivo de un rechazo) usan `confirmDialog` y `promptDialog`, y los resultados se informan con `toast`, todo desde `lib/feedback.js`. `components/FeedbackHost.jsx` los dibuja y está montado una sola vez en `main.jsx`.
+
+### Campos de fecha, mes y hora
+
+Los formularios no usan los selectores del navegador. `components/DateTimeFields.jsx` tiene `DateField` ("AAAA-MM-DD"), `MonthField` ("AAAA-MM") y `TimeField` ("HH:MM"); se usan igual que un `<input>` (value, onChange, name, required, min, max). Se puede escribir la fecha o la hora, o elegirla en un panel con el mismo estilo que los desplegables. `defaultView="years"` abre el calendario eligiendo el año (fecha de nacimiento).
+
+Todos los campos de todas las pantallas (textos, desplegables, fechas, horas y buscadores) tienen el mismo alto: lo fija `--field-height` en `styles.css`; `components/fieldStyles.js` tiene la clase común.
+
+### Orden de las pantallas y datos del empleado
+
+En cada módulo del empleador va primero el formulario de carga (registrar, asignar), después las tarjetas de indicadores y al final la tabla. En todas las tablas y listas el empleado se muestra igual, con `components/EmployeeIdentity.jsx`: avatar, nombre y "Leg. #N • Puesto • Área".
+
+### Ventanas flotantes
+
+Solo una puede estar abierta: al abrir las notificaciones, un calendario, un desplegable o una ventana de confirmación, se cierran las demás (`useExclusiveOverlay` de `lib/overlays.js`). Las notificaciones se dibujan sobre cualquier vista.
+
+### Carga de las pantallas
+
+Mientras se leen los datos se muestra la forma de la pantalla que viene (`components/LoadingScreen.jsx`): el menú y bloques grises en lugar de las tarjetas, el formulario y la tabla.
 
 ### Desplegables
 
@@ -222,6 +257,10 @@ Los paneles no usan el desplegable del navegador. `components/Select.jsx` se usa
 - Las notificaciones las crea la base con disparadores; cada usuario solo puede leer las suyas y marcarlas como leídas.
 - Los recibos se guardan en un bucket privado y se abren con URLs firmadas que vencen a los 5 minutos.
 - Las reglas de francos y vacaciones se validan en la base, no solo en la interfaz.
+
+## Lectura de datos
+
+Supabase devuelve como máximo 1000 filas por consulta. `select` de `lib/store.js` lee en tandas de 1000 hasta traer todo, y horarios y fichajes se leen desde 400 días atrás. Antes, con un año de datos (más de 1000 horarios), los turnos nuevos se guardaban pero no aparecían en la tabla.
 
 ## Límites actuales
 

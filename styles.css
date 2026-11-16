@@ -164,3 +164,33 @@ html {
 .hr-data-table:not(.hr-data-table--comparison) tbody td :where(.rounded-full, .rounded-md.border):not(input, select, textarea) {
   font-size: 0.5625rem !important;
 }
+
+/* Campos: todos los inputs, desplegables y selectores de fecha y hora del sistema tienen
+   el mismo alto, en todas las pantallas. El texto queda centrado verticalmente. */
+:root {
+  --field-height: 2rem;
+}
+.hr-field,
+input:not(.hr-field-inner):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not([type="color"]),
+select,
+button[role="combobox"] {
+  height: var(--field-height);
+  min-height: var(--field-height);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.hr-field-inner {
+  height: 1.4em;
+}
+
+/* Pantalla de carga: brillo que recorre los bloques grises */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 37%, #e2e8f0 63%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}

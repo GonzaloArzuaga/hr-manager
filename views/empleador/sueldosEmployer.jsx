@@ -1,4 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
+import { fieldClass } from "../../components/fieldStyles";
+import { MonthField } from "../../components/DateTimeFields";
+import { employeeOptionLabel } from "../../data/employeeDirectory";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import EmployeeIdentity from "../../components/EmployeeIdentity";
 import PaginationControls from "../../components/PaginationControls";
@@ -288,7 +292,7 @@ export default function SueldosEmployer() {
                 <label className="block text-[0.6875rem] font-semibold text-slate-700">
                   Empleado <span aria-hidden="true" className="text-red-600">*</span>
                   <Select
-                    className="mt-1 block w-full rounded-md border-slate-200 bg-[#f0f4ff] px-2.5 py-1.5 text-[0.5625rem] text-slate-700 focus:border-blue-500 focus:ring-blue-500"
+                    className={`${fieldClass} mt-1`}
                     name="employeeId"
                     onChange={handleFormChange}
                     required
@@ -307,15 +311,15 @@ export default function SueldosEmployer() {
                         key={employee.id}
                         value={employee.id}
                       >
-                        {employee.name} — CUIL {employee.cuil}
+                        {employeeOptionLabel(employee)}
                       </option>
                     ))}
                   </Select>
                 </label>
                 <label className="block text-[0.6875rem] font-semibold text-slate-700">
                   Período (mes) <span aria-hidden="true" className="text-red-600">*</span>
-                  <input
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] text-slate-700 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  <MonthField
+                    className={`${fieldClass} mt-1`}
                     aria-label="Período (mes)"
                     name="periodMonth"
                     onChange={(event) => {
@@ -326,14 +330,13 @@ export default function SueldosEmployer() {
                       setMessage("");
                     }}
                     required
-                    type="month"
                     value={toMonthInputValue(form.period)}
                   />
                 </label>
                 <label className="block text-[0.6875rem] font-semibold text-slate-700">
                   Tipo de pago <span aria-hidden="true" className="text-red-600">*</span>
                   <Select
-                    className="mt-1 block w-full rounded-md border-slate-200 bg-[#f0f4ff] px-2.5 py-1.5 text-[0.5625rem] text-slate-700 focus:border-blue-500 focus:ring-blue-500"
+                    className={`${fieldClass} mt-1`}
                     name="paymentType"
                     onChange={handleFormChange}
                     required
@@ -346,10 +349,10 @@ export default function SueldosEmployer() {
                 </label>
                 <label className="block text-[0.6875rem] font-semibold text-slate-700">
                   Monto Neto a Liquidar <span aria-hidden="true" className="text-red-600">*</span>
-                  <span className="mt-1 flex items-center rounded-md border border-slate-200 bg-[#f0f4ff] px-2.5 text-[0.5625rem] text-slate-500 focus-within:border-blue-500">
+                  <span className="hr-field mt-1 flex items-center rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-[0.5625rem] text-slate-500 focus-within:border-blue-500 focus-within:bg-white focus-within:ring-1 focus-within:ring-blue-500">
                     $
                     <input
-                      className="w-full border-0 bg-transparent px-2 py-1.5 text-[0.5625rem] text-slate-700 focus:ring-0"
+                      className="hr-field-inner w-full border-0 bg-transparent px-2 py-0 text-[0.5625rem] text-slate-700 focus:ring-0"
                       inputMode="numeric"
                       min="1"
                       name="amount"
@@ -365,7 +368,7 @@ export default function SueldosEmployer() {
                   <span className="block text-[0.6875rem] font-semibold text-slate-700">
                     Recibo (PDF) <span aria-hidden="true" className="text-red-600">*</span>
                   </span>
-                  <div className="mt-1 flex h-[1.9375rem] items-center justify-between gap-2 rounded-md border border-slate-200 bg-[#f0f4ff] px-2.5 text-[0.5625rem]">
+                  <div className="hr-field mt-1 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-[0.5625rem]">
                     <span className="min-w-0 truncate text-slate-600">
                       <span className="mr-1 text-red-600">▧</span>
                       {receipt?.name ?? "Seleccionar archivo PDF"}
@@ -406,7 +409,7 @@ export default function SueldosEmployer() {
                   disabled={saving}
                   type="submit"
                 >
-                  <Icon className="h-3 w-3"><path d="M9 12l2 2 4-4m5 0a8 8 0 11-16 0 8 8 0 0116 0z" /></Icon>
+                  <CheckIcon />
                   Registrar pago y emitir recibo
                 </button>
               </div>
@@ -534,13 +537,11 @@ export default function SueldosEmployer() {
                           <td className="px-4 py-2.5">
                             <EmployeeIdentity
                               avatarStyle={employee.avatarStyle}
+                              employeeId={employee.id}
                               department={employee.department}
                               detail={`CUIL ${employee.cuil}`}
                               initials={employee.initials}
                               name={employee.name}
-                              nameClassName="text-[0.625rem]"
-                              metadataClassName="text-[0.5625rem]"
-                              size="lg"
                             />
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-slate-700">

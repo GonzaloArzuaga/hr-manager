@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { demoVideoUrls } from "../data/demoVideos";
+import { hasPlayableVideo, isDirectVideoUrl, loadYouTubeApi, youtubeVideoId } from "../lib/demoVideos";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import PricingRedirectCard from "../components/cards/PricingRedirectCard";
@@ -37,14 +39,14 @@ const demoChapters = [
     title: "Planificación de Turnos y Horarios",
     icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/horariosDemo.mp4",
+      demoVideoUrls.horarios,
   },
   {
     label: "Fichajes",
     title: "Registro de Asistencia y Fichajes Digitales",
     icon: "M80-40v-80h800v80H80Zm80-120v-240q-33-54-51-114.5T91-638q0-61 15.5-120T143-874q8-21 26-33.5t40-12.5q31 0 53 21t18 50l-11 91q-6 48 8.5 91t43.5 75.5q29 32.5 70 52t89 19.5q60 0 120.5 12.5T706-472q45 23 69.5 58.5T800-326v166H160Zm80-80h480v-86q0-24-12-42.5T674-398q-41-20-95-31t-99-11q-66 0-122.5-27t-96-72.5Q222-585 202-644.5T190-768q-10 30-14.5 64t-4.5 66q0 58 20.5 111.5T240-422v182Zm127-367q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47Zm169.5-56.5Q560-687 560-720t-23.5-56.5Q513-800 480-800t-56.5 23.5Q400-753 400-720t23.5 56.5Q447-640 480-640t56.5-23.5ZM320-160v-37q0-67 46.5-115T480-360h160v80H480q-34 0-57 24.5T400-197v37h-80Zm160-80Zm0-480Z",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/fichajesDemo.mp4",
+      demoVideoUrls.fichajes,
     filled: true,
   },
   {
@@ -52,35 +54,35 @@ const demoChapters = [
     title: "Gestión de Francos y Días Compensatorios",
     icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/francosDemo.mp4",
+      demoVideoUrls.francos,
   },
   {
     label: "Vacaciones",
     title: "Solicitudes y Calendario de Vacaciones",
     icon: "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/vacacionesDemo.mp4",
+      demoVideoUrls.vacaciones,
   },
   {
     label: "Empleados",
     title: "Directorio y Legajos de Colaboradores",
     icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/empleadoDemo.mp4",
+      demoVideoUrls.empleados,
   },
   {
     label: "Sueldos",
     title: "Liquidación de Sueldos y Recibos Digitales",
     icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/sueldosDemo.mp4",
+      demoVideoUrls.sueldos,
   },
   {
     label: "Estadísticas",
     title: "Métricas, Informes y Analíticas de RR. HH.",
     icon: "M280-280h80v-280h-80v280Zm160 0h80v-400h-80v400Zm160 0h80v-160h-80v160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z",
     videoUrl:
-      "https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/videosAbout/estadisticasDemo.mp4",
+      demoVideoUrls.estadisticas,
     filled: true,
   },
 ];
@@ -135,56 +137,14 @@ function InfoCard({ title, description, icon, footer, footerIcon }) {
   );
 }
 
-let youtubeApiPromise;
-
-function loadYouTubeApi() {
-  if (window.YT && window.YT.Player) {
-    return Promise.resolve(window.YT);
-  }
-
-  if (!youtubeApiPromise) {
-    youtubeApiPromise = new Promise((resolve, reject) => {
-      const previousCallback = window.onYouTubeIframeAPIReady;
-      const script = document.createElement("script");
-
-      window.onYouTubeIframeAPIReady = () => {
-        if (typeof previousCallback === "function") {
-          previousCallback();
-        }
-        resolve(window.YT);
-      };
-
-      script.async = true;
-      script.onerror = () => reject(new Error("No se pudo cargar YouTube"));
-      script.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(script);
-    });
-  }
-
-  return youtubeApiPromise;
-}
-
-function youtubeVideoId(url) {
-  const match = url.match(
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
-  );
-  return match ? match[1] : "";
-}
-
-function isDirectVideoUrl(url) {
-  return /\.(mp4|webm|ogg)(?:$|[?#])/i.test(url);
-}
-
-function hasPlayableVideo(url) {
-  return Boolean(youtubeVideoId(url) || isDirectVideoUrl(url));
-}
-
 function ProductDemo() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [progress, setProgress] = useState(0);
   const [apiReady, setApiReady] = useState(false);
   const [videoUnavailable, setVideoUnavailable] = useState(false);
+  // Mientras el video se descarga se muestra un aviso de carga sobre el reproductor
+  const [videoLoading, setVideoLoading] = useState(true);
   const playerContainerRef = useRef(null);
   const playerRef = useRef(null);
   const activeIndexRef = useRef(activeIndex);
@@ -234,9 +194,10 @@ function ProductDemo() {
               setApiReady(true);
             },
             onStateChange: (event) => {
-              if (!cancelled && event.data === youtube.PlayerState.ENDED) {
-                advanceAfterVideo();
-              }
+              if (cancelled) return;
+              if (event.data === youtube.PlayerState.PLAYING) setVideoLoading(false);
+              if (event.data === youtube.PlayerState.BUFFERING || event.data === -1) setVideoLoading(true);
+              if (event.data === youtube.PlayerState.ENDED) advanceAfterVideo();
             },
             onError: () => {
               if (!cancelled) {
@@ -286,6 +247,7 @@ function ProductDemo() {
     const nextIndex = (endedIndex + 1) % demoChapters.length;
 
     activeIndexRef.current = nextIndex;
+    setVideoLoading(true);
     setProgress(0);
     setVideoUnavailable(!hasPlayableVideo(demoChapters[nextIndex].videoUrl));
     setActiveIndex(nextIndex);
@@ -318,6 +280,7 @@ function ProductDemo() {
 
   function selectChapter(index) {
     activeIndexRef.current = index;
+    setVideoLoading(true);
     setActiveIndex(index);
     setSelectionVersion((version) => version + 1);
     setProgress(0);
@@ -411,8 +374,12 @@ function ProductDemo() {
                 key={`${activeIndex}-${selectionVersion}`}
                 muted
                 onContextMenu={(event) => event.preventDefault()}
+                onCanPlay={() => setVideoLoading(false)}
                 onEnded={advanceAfterVideo}
                 onError={() => setVideoUnavailable(true)}
+                onLoadStart={() => setVideoLoading(true)}
+                onPlaying={() => setVideoLoading(false)}
+                onWaiting={() => setVideoLoading(true)}
                 onTimeUpdate={(event) => {
                   const { currentTime, duration } = event.currentTarget;
                   if (Number.isFinite(duration) && duration > 0) {
@@ -434,6 +401,18 @@ function ProductDemo() {
                 ref={playerContainerRef}
               />
             </div>
+            {activeHasVideo && !videoUnavailable && videoLoading && (
+              <div
+                aria-live="polite"
+                className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100/85 backdrop-blur-[1px]"
+                data-testid="video-loading"
+                role="status"
+              >
+                <span className="h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-700" />
+                <p className="text-sm font-semibold text-slate-700">Cargando el video de {activeChapter.label}…</p>
+                <p className="text-xs text-slate-500">Puede tardar unos segundos según tu conexión.</p>
+              </div>
+            )}
             {!activeHasVideo || videoUnavailable ? (
               <div
                 className="flex max-w-md flex-col items-center px-6 text-center"

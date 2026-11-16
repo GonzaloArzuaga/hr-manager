@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import FrancoDatePicker from "../../components/FrancoDatePicker";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import PaginationControls from "../../components/PaginationControls";
 import PendingFrancoCard from "../../components/cards/empleado/PendingFrancoCard";
@@ -110,138 +112,8 @@ function StatusBadge({ status }) {
   );
 }
 
-function CalendarCard({
-  month,
-  currentPeriodValue,
-  selectedDates,
-  requestedDates,
-  minRequestDate,
-  remainingFrancos,
-  onToggleDate,
-  onChangeMonth,
-  onClose,
-}) {
-  const weekdays = ["L", "M", "M", "J", "V", "S", "D"];
-  const [year, monthNumber] = month.split("-").map(Number);
-  const monthIndex = monthNumber - 1;
-  const referenceDate = new Date(year, monthIndex, 1);
-  const monthName = new Intl.DateTimeFormat("es-AR", {
-    month: "long",
-    year: "numeric",
-  }).format(referenceDate);
-  const monthValue = `${year}-${String(monthNumber).padStart(2, "0")}`;
-  const leadingEmptyDays = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const calendarDays = [
-    ...Array.from({ length: leadingEmptyDays }, (_, index) => ({
-      key: `empty-${index}`,
-      day: null,
-      value: "",
-    })),
-    ...Array.from({ length: daysInMonth }, (_, index) => {
-      const day = index + 1;
-      const value = `${monthValue}-${String(day).padStart(2, "0")}`;
-      return {
-        key: value,
-        day,
-        value,
-      };
-    }),
-  ];
-
-  return (
-    <section
-      aria-label="Calendario de francos"
-      className="absolute left-0 top-full z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
-      role="dialog"
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <button
-          aria-label="Mes anterior"
-          className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-          disabled={month <= currentPeriodValue}
-          onClick={() => onChangeMonth(-1)}
-          type="button"
-        >
-          <Icon className="h-3.5 w-3.5">
-            <path d="M15 19l-7-7 7-7" />
-          </Icon>
-        </button>
-        <h2 className="text-xs font-bold capitalize text-slate-800">{monthName}</h2>
-        <button
-          aria-label="Mes siguiente"
-          className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100"
-          onClick={() => onChangeMonth(1)}
-          type="button"
-        >
-          <Icon className="h-3.5 w-3.5">
-            <path d="M9 5l7 7-7 7" />
-          </Icon>
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[0.5625rem] font-semibold text-slate-400">
-        {weekdays.map((day, index) => (
-          <span key={`${day}-${index}`}>{day}</span>
-        ))}
-      </div>
-      <div className="mt-2 grid grid-cols-7 gap-1 text-center text-[0.625rem] font-medium">
-        {calendarDays.map(({ day, key, value }) => {
-          if (day === null) {
-            return <span aria-hidden="true" className="h-8" key={key} />;
-          }
-          const selected = selectedDates.includes(value);
-          const alreadyRequested = requestedDates.has(value);
-          const isPastOrTooSoon = value < minRequestDate;
-          const disabled =
-            alreadyRequested ||
-            isPastOrTooSoon ||
-            (!selected &&
-              (remainingFrancos === 0 ||
-                selectedDates.length >= remainingFrancos));
-          const className = selected
-            ? "border-blue-700 bg-blue-700 font-bold text-white shadow-sm"
-            : alreadyRequested
-              ? "cursor-not-allowed border-blue-200 bg-blue-100 font-bold text-blue-800"
-              : isPastOrTooSoon
-                ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300"
-                : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50";
-          return (
-            <button
-              aria-label={`${day} de ${monthName}${selected ? ", seleccionado" : ""}${alreadyRequested ? ", ya solicitado" : ""}`}
-              aria-pressed={selected}
-              className={`h-8 rounded-md border transition disabled:cursor-not-allowed ${className}`}
-              disabled={disabled}
-              key={key}
-              onClick={() => onToggleDate(value)}
-              title={alreadyRequested ? "Ya solicitado para este período" : undefined}
-              type="button"
-            >
-              {day}
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-        <span aria-live="polite" className="text-[0.5625rem] font-semibold text-slate-600">
-          {selectedDates.length} seleccionados · {remainingFrancos - selectedDates.length} disponibles
-        </span>
-        <button
-          className="rounded-lg bg-blue-700 px-3 py-1.5 text-[0.5625rem] font-semibold text-white transition hover:bg-blue-800"
-          onClick={onClose}
-          type="button"
-        >
-          Listo
-        </button>
-      </div>
-    </section>
-  );
-}
-
 export default function FrancosEmployee() {
   const businessRules = getBusinessRules();
-  const monthlyFrancoAllowance = getMonthlyFrancoAllowance(
-    businessRules.weeklyDaysOff,
-  );
   const now = new Date();
   const currentPeriodValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const [requests, setRequests] = useState(employeeFrancoRequests);
@@ -296,6 +168,8 @@ export default function FrancosEmployee() {
       ),
     [currentPeriodValue, requests],
   );
+  // Cupo del mes elegido (misma regla que usa el empleador)
+  const monthlyFrancoAllowance = getMonthlyFrancoAllowance(businessRules.weeklyDaysOff, selectedMonth);
   const remainingFrancos = Math.max(
     0,
     monthlyFrancoAllowance - requestedDates.size,
@@ -532,50 +406,19 @@ export default function FrancosEmployee() {
                     >
                       Período y fechas solicitadas <span className="text-rose-500">*</span>
                     </label>
-                    <button
-                      aria-controls="franco-calendar"
-                      aria-expanded={showCalendar}
-                      className="flex min-h-[2.625rem] w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-[0.625rem] font-medium text-slate-700 transition hover:border-blue-300 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    <FrancoDatePicker
                       id="franco-date-field"
-                      onClick={() => setShowCalendar((visible) => !visible)}
-                      type="button"
-                    >
-                      <Icon className="h-4 w-4 shrink-0 text-blue-600">
-                        <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </Icon>
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-semibold capitalize">{selectedMonthLabel}</span>
-                        <span className="block truncate text-[0.5625rem] text-slate-500">
-                          {selectedDates.length
-                            ? selectedDates
-                                .map((date) =>
-                                  new Intl.DateTimeFormat("es-AR", {
-                                    day: "2-digit",
-                                  }).format(new Date(`${date}T12:00:00`)),
-                                )
-                                .join(", ")
-                            : "Seleccionar fechas"}
-                        </span>
-                      </span>
-                      <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400">
-                        <path d={showCalendar ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6"} />
-                      </Icon>
-                    </button>
-                    {showCalendar && (
-                      <div id="franco-calendar">
-                        <CalendarCard
-                          currentPeriodValue={currentPeriodValue}
-                          minRequestDate={minRequestDate}
-                          month={selectedMonth}
-                          onChangeMonth={changeMonth}
-                          onClose={() => setShowCalendar(false)}
-                          onToggleDate={toggleDate}
-                          remainingFrancos={remainingFrancos}
-                          requestedDates={requestedDates}
-                          selectedDates={selectedDates}
-                        />
-                      </div>
-                    )}
+                      minDate={minRequestDate}
+                      minMonth={currentPeriodValue}
+                      month={selectedMonth}
+                      onChangeMonth={changeMonth}
+                      onToggleDate={toggleDate}
+                      open={showCalendar}
+                      remaining={remainingFrancos}
+                      requestedDates={requestedDates}
+                      selectedDates={selectedDates}
+                      setOpen={setShowCalendar}
+                    />
                   </div>
                   <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
                     <span className="block text-[0.5625rem] font-semibold uppercase tracking-wide text-blue-700">
@@ -637,14 +480,11 @@ export default function FrancosEmployee() {
                     Limpiar formulario
                   </button>
                   <button
-                    className="inline-flex items-center justify-center rounded-lg bg-[#0d47a1] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm transition hover:bg-[#0b3c8a] disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#0d47a1] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm transition hover:bg-[#0b3c8a] disabled:opacity-60"
                     disabled={submitting}
                     type="submit"
                   >
-                    <Icon className="mr-2 h-3 w-3">
-                      <path d="M22 2L11 13" />
-                      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-                    </Icon>
+                    <CheckIcon />
                     Enviar solicitud de franco
                   </button>
                 </div>
@@ -670,7 +510,7 @@ export default function FrancosEmployee() {
             className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3"
           >
             <RequestedFrancoCard
-              allowance={monthlyFrancoAllowance}
+              allowance={getMonthlyFrancoAllowance(businessRules.weeklyDaysOff, currentPeriodValue)}
               monthLabel={currentMonthLabel}
               requestedDays={currentPeriodRequestedDates.size}
             />

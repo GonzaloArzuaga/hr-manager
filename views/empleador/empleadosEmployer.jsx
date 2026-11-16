@@ -1,4 +1,8 @@
+import { generatePassword as createPassword } from "../../lib/passwords";
 import React, { useEffect, useMemo, useState } from "react";
+import { useExclusiveOverlay } from "../../lib/overlays";
+import { DateField } from "../../components/DateTimeFields";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import EmployeeIdentity from "../../components/EmployeeIdentity";
 import PaginationControls from "../../components/PaginationControls";
@@ -60,6 +64,7 @@ function normalize(value) {
 }
 
 function EditEmployeeDialog({ employee, roleOptions, departmentOptions, branchOptions, onClose, onSaved }) {
+  useExclusiveOverlay(true, onClose);
   const hasAccount = (store.raw?.accounts ?? []).some((account) => account.employee_id === employee.dbId);
   const [form, setForm] = useState({
     name: employee.name,
@@ -156,10 +161,10 @@ function EditEmployeeDialog({ employee, roleOptions, departmentOptions, branchOp
             <input className={field} name="collectiveAgreement" onChange={update} placeholder="Opcional" value={form.collectiveAgreement} />
           </label>
           <label className={label}>Fecha de nacimiento *
-            <input className={field} name="birthDate" onChange={update} required type="date" value={form.birthDate} />
+            <DateField className={field} defaultView="years" name="birthDate" onChange={update} required  value={form.birthDate} />
           </label>
           <label className={label}>Fecha de ingreso *
-            <input className={field} name="hireDate" onChange={update} required type="date" value={form.hireDate} />
+            <DateField className={field} name="hireDate" onChange={update} required  value={form.hireDate} />
           </label>
         </div>
         {error && <p className="mt-3 text-[0.625rem] font-medium text-red-600" role="alert">{error}</p>}
@@ -255,10 +260,7 @@ export default function EmpleadosEmployer() {
   }
 
   function generatePassword() {
-    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
-    const randomValues = new Uint32Array(12);
-    window.crypto.getRandomValues(randomValues);
-    const password = Array.from(randomValues, (value) => alphabet[value % alphabet.length]).join("");
+    const password = createPassword();
     setForm((current) => ({ ...current, password }));
     setMessage("");
   }
@@ -469,25 +471,24 @@ export default function EmpleadosEmployer() {
                 </label>
                 <label className="block text-[0.6875rem] font-semibold text-slate-700">
                   Fecha de Nacimiento <span aria-hidden="true" className="text-red-600">*</span>
-                  <input
+                  <DateField
                     className={inputClasses()}
+                    defaultView="years"
                     max={new Date().toISOString().slice(0, 10)}
                     name="birthDate"
                     onChange={handleChange}
                     required
-                    type="date"
                     value={form.birthDate}
                   />
                 </label>
                 <label className="block text-[0.6875rem] font-semibold text-slate-700">
                   Fecha de Ingreso <span aria-hidden="true" className="text-red-600">*</span>
-                  <input
+                  <DateField
                     className={inputClasses()}
                     max={new Date().toISOString().slice(0, 10)}
                     name="hireDate"
                     onChange={handleChange}
                     required
-                    type="date"
                     value={form.hireDate}
                   />
                 </label>
@@ -506,7 +507,7 @@ export default function EmpleadosEmployer() {
                   disabled={submitting}
                   type="submit"
                 >
-                  <Icon className="h-3 w-3"><path d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m16 0v-2a4 4 0 00-3-3.87M14 3.13a4 4 0 010 7.75M14 7a4 4 0 11-8 0 4 4 0 018 0z" /></Icon>
+                  <CheckIcon />
                   {submitting ? "Dando de alta…" : "Dar de Alta"}
                 </button>
               </div>
@@ -603,8 +604,6 @@ export default function EmpleadosEmployer() {
                             employeeId={employee.id}
                             initials={employee.initials}
                             name={employee.name}
-                            nameClassName="text-[0.625rem]"
-                            size="lg"
                           />
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">{employee.cuil}</td>

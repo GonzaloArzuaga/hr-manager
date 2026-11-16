@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
+import { TimeField } from "../../components/DateTimeFields";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import { store } from "../../lib/store";
 import CompanyCatalogs from "../../components/CompanyCatalogs";
 import PasswordForm from "../../components/PasswordForm";
+import { CheckIcon, PlusIcon } from "../../components/icons";
 import {
   adminUpdatePlan,
   adminUpdateProfile,
@@ -59,7 +61,13 @@ function FormField({ label, className = inputClassName, ...inputProps }) {
   return (
     <label className="block text-[0.6875rem] font-semibold text-slate-700">
       {label}
-      <input className={`${className} mt-2 block`} {...inputProps} />
+      {inputProps.type === "time" ? (
+        <span className="mt-2 block">
+          <TimeField className={className} {...inputProps} type={undefined} />
+        </span>
+      ) : (
+        <input className={`${className} mt-2 block`} {...inputProps} />
+      )}
     </label>
   );
 }
@@ -97,8 +105,18 @@ function PlanEditor({ plan, onSaved }) {
     max_employees: plan.max_employees ?? "",
     description: plan.description ?? "",
     modules: Array.isArray(plan.modules) ? plan.modules : allModuleKeys,
+    features: Array.isArray(plan.features) ? plan.features.map((item) => ({ ...item })) : [],
+    highlighted: Boolean(plan.highlighted),
   });
   const [saving, setSaving] = useState(false);
+
+  // Características que muestra la página de Precios (además del límite y los módulos)
+  function updateFeature(index, changes) {
+    setForm((current) => ({
+      ...current,
+      features: current.features.map((item, position) => (position === index ? { ...item, ...changes } : item)),
+    }));
+  }
 
   function update(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
@@ -200,12 +218,70 @@ function PlanEditor({ plan, onSaved }) {
           })}
         </div>
       </fieldset>
+      <fieldset className="mt-3">
+        <legend className={planLabelClassName}>Características en la página de Precios</legend>
+        <p className="mt-0.5 text-[0.5625rem] text-slate-500">
+          El límite de empleados y los módulos se muestran solos. Acá van el soporte y cualquier otro beneficio.
+          Destildá "Incluida" para mostrarla tachada como no incluida.
+        </p>
+        <div className="mt-1.5 space-y-1.5">
+          {form.features.map((feature, index) => (
+            <div className="flex items-center gap-2" key={index}>
+              <input
+                aria-label={`Característica ${index + 1}`}
+                className={planInputClassName.replace("mt-1 ", "")}
+                maxLength={120}
+                onChange={(event) => updateFeature(index, { label: event.target.value })}
+                placeholder="Ej. Soporte técnico 24/7"
+                value={feature.label}
+              />
+              <label className="flex shrink-0 items-center gap-1 text-[0.5625rem] text-slate-600">
+                <input
+                  checked={feature.included !== false}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  onChange={(event) => updateFeature(index, { included: event.target.checked })}
+                  type="checkbox"
+                />
+                Incluida
+              </label>
+              <button
+                aria-label={`Quitar la característica ${index + 1}`}
+                className="shrink-0 rounded-md px-1.5 py-1 text-[0.625rem] font-bold text-rose-600 hover:bg-rose-50"
+                onClick={() => setForm((current) => ({ ...current, features: current.features.filter((_, position) => position !== index) }))}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {form.features.length < 12 && (
+            <button
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-2 py-1 text-[0.5625rem] font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => setForm((current) => ({ ...current, features: [...current.features, { label: "", included: true }] }))}
+              type="button"
+            >
+              <PlusIcon className="h-2.5 w-2.5" />
+              Agregar característica
+            </button>
+          )}
+        </div>
+      </fieldset>
+      <label className="mt-3 flex items-center gap-2 text-[0.625rem] text-slate-700">
+        <input
+          checked={form.highlighted}
+          className="h-3.5 w-3.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+          onChange={(event) => setForm((current) => ({ ...current, highlighted: event.target.checked }))}
+          type="checkbox"
+        />
+        Destacar como "Más popular" en la página de Precios
+      </label>
       <div className="mt-3 flex justify-end">
         <button
-          className="rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-60"
           disabled={saving}
           type="submit"
         >
+          <CheckIcon />
           {saving ? "Guardando..." : "Guardar plan"}
         </button>
       </div>
@@ -807,9 +883,10 @@ function ParticipantConfiguration({ userType = "employer" }) {
                         />
                       </div>
                       <button
-                        className="rounded-lg bg-blue-800 px-3.5 py-1.5 text-[0.5625rem] font-bold text-white transition-colors hover:bg-blue-900"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-800 px-3.5 py-1.5 text-[0.5625rem] font-bold text-white transition-colors hover:bg-blue-900"
                         type="submit"
                       >
+                        <PlusIcon />
                         Añadir tramo
                       </button>
                     </form>
@@ -856,14 +933,13 @@ function ParticipantConfiguration({ userType = "employer" }) {
                               <label className="sr-only" htmlFor={`shift-start-${shift.id}`}>
                                 Hora de inicio
                               </label>
-                              <input
+                              <TimeField
                                 className="rounded-md border border-slate-200 px-3 py-1.5 text-[0.625rem] text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 id={`shift-start-${shift.id}`}
                                 onChange={(event) =>
                                   updateShiftType(shift.id, "start", event.target.value)
                                 }
                                 required
-                                type="time"
                                 value={shift.start}
                               />
                             </td>
@@ -871,14 +947,13 @@ function ParticipantConfiguration({ userType = "employer" }) {
                               <label className="sr-only" htmlFor={`shift-end-${shift.id}`}>
                                 Hora de finalización
                               </label>
-                              <input
+                              <TimeField
                                 className="rounded-md border border-slate-200 px-3 py-1.5 text-[0.625rem] text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 id={`shift-end-${shift.id}`}
                                 onChange={(event) =>
                                   updateShiftType(shift.id, "end", event.target.value)
                                 }
                                 required
-                                type="time"
                                 value={shift.end}
                               />
                             </td>
@@ -950,10 +1025,11 @@ function ParticipantConfiguration({ userType = "employer" }) {
                         Guardar tipos de turnos
                       </button>
                       <button
-                        className="rounded-lg bg-blue-800 px-3.5 py-1.5 text-[0.5625rem] font-bold text-white transition-colors hover:bg-blue-900"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-800 px-3.5 py-1.5 text-[0.5625rem] font-bold text-white transition-colors hover:bg-blue-900"
                         onClick={addShiftType}
                         type="button"
                       >
+                        <PlusIcon />
                         Agregar tipo
                       </button>
                     </div>

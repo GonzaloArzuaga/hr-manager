@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useExclusiveOverlay } from "../lib/overlays";
 import { navigate } from "../lib/router";
 import {
   markAllNotificationsRead,
@@ -45,6 +47,8 @@ export default function NotificationBell({ size = "sm" }) {
   const [position, setPosition] = useState(null);
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
+  // Al abrir las notificaciones se cierra cualquier otro calendario o desplegable abierto
+  useExclusiveOverlay(open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return undefined;
@@ -100,10 +104,10 @@ export default function NotificationBell({ size = "sm" }) {
         )}
       </button>
 
-      {open && position && (
+      {open && position && createPortal(
         <div
           aria-label="Notificaciones"
-          className="fixed z-[60] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl"
+          className="fixed z-[120] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl"
           ref={panelRef}
           role="dialog"
           style={{ top: position.top, left: position.left, width: position.width }}
@@ -150,7 +154,8 @@ export default function NotificationBell({ size = "sm" }) {
               <li className="px-3.5 py-8 text-center text-[0.625rem] text-slate-500">No tenés notificaciones.</li>
             )}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

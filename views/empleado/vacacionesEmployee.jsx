@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import PaginationControls from "../../components/PaginationControls";
 import VacationAvailableBalanceCard from "../../components/cards/empleado/VacationAvailableBalanceCard";
@@ -533,7 +534,7 @@ export default function VacacionesEmployee() {
                     </span>
                     <button
                       aria-label="Seleccionar período de vacaciones"
-                      className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-left text-[0.5625rem] text-slate-700 transition hover:border-blue-400 hover:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="hr-field flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-left text-[0.5625rem] text-slate-700 transition hover:border-blue-400 hover:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={!selectedPeriod || remainingDays === 0}
                       onClick={() => setShowDatePicker(true)}
                       type="button"
@@ -571,7 +572,7 @@ export default function VacacionesEmployee() {
                     <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-700">
                       Días restantes
                     </span>
-                    <div className="flex h-9 items-center justify-between rounded-lg border border-slate-200/80 bg-blue-50 px-2.5">
+                    <div className="hr-field flex items-center justify-between rounded-lg border border-slate-200/80 bg-blue-50 px-2.5">
                       <span className="text-[0.5625rem] font-bold text-blue-700">
                         {selectedPeriod ? `${remainingAfterSelection} días` : "—"}
                       </span>
@@ -595,9 +596,7 @@ export default function VacacionesEmployee() {
                       disabled={submitting}
                       type="submit"
                     >
-                      <Icon className="h-3 w-3">
-                        <path d="M12 4v16m8-8H4" />
-                      </Icon>
+                      <CheckIcon />
                       Solicitar Vacaciones
                     </button>
                 </div>

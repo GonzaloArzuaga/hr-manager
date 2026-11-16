@@ -1,3 +1,4 @@
+import { generatePassword } from "../../lib/passwords";
 import React, { useEffect, useMemo, useState } from "react";
 import PaginationControls from "../../components/PaginationControls";
 import { usePagination } from "../../hooks/usePagination";
@@ -35,16 +36,7 @@ const dateFormat = new Intl.DateTimeFormat("es-AR", {
 });
 
 function generateProvisionalPassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
-  const randomValues = new Uint32Array(14);
-  window.crypto.getRandomValues(randomValues);
-  const characters = Array.from(randomValues.slice(0, 12), (value) => alphabet[value % alphabet.length]);
-  if (!characters.some((character) => /[^A-Za-z0-9]/.test(character))) {
-    const position = randomValues[12] % characters.length;
-    const symbols = "!@#$";
-    characters[position] = symbols[randomValues[13] % symbols.length];
-  }
-  return characters.join("");
+  return generatePassword();
 }
 
 function MetricCard({ title, value, note, tone = "text-slate-900" }) {

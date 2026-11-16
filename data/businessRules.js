@@ -50,6 +50,13 @@ export function getVacationEntitlement(seniority, vacationRanges) {
   return range?.days ?? 0;
 }
 
-export function getMonthlyFrancoAllowance(weeklyDaysOff) {
-  return weeklyDaysOff * 4;
+// Francos que corresponden a un empleado en un mes: los francos semanales de la
+// empresa multiplicados por las semanas que tiene ese mes (días del mes / 7),
+// redondeado. Con 2 francos por semana: 8 en febrero y 9 en los meses de 30 o 31 días.
+// Sin mes, se toma un mes de 4 semanas (criterio anterior).
+export function getMonthlyFrancoAllowance(weeklyDaysOff, month) {
+  if (!month) return weeklyDaysOff * 4;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  return Math.round((weeklyDaysOff * daysInMonth) / 7);
 }

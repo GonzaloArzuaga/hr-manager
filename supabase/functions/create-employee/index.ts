@@ -25,12 +25,18 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function generatePassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const symbols = "!@#$%&*";
-  const values = crypto.getRandomValues(new Uint32Array(12));
-  const base = Array.from(values.slice(0, 11), (v) => alphabet[v % alphabet.length]).join("");
-  return base + symbols[values[11] % symbols.length];
+function generatePassword(length = 12) {
+  // Siempre con mayúscula, minúscula, número y carácter especial (RNF-03)
+  const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!@#$%&*?"];
+  const all = sets.join("");
+  const pick = (set: string) => set[crypto.getRandomValues(new Uint32Array(1))[0] % set.length];
+  const characters = sets.map(pick);
+  while (characters.length < length) characters.push(pick(all));
+  for (let index = characters.length - 1; index > 0; index -= 1) {
+    const other = crypto.getRandomValues(new Uint32Array(1))[0] % (index + 1);
+    [characters[index], characters[other]] = [characters[other], characters[index]];
+  }
+  return characters.join("");
 }
 
 function passwordProblems(password: string) {

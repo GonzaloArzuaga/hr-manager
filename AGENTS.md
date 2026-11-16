@@ -38,7 +38,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
   - `views/empleador/`: panel, empleados, horarios, francos, vacaciones, sueldos, estadísticas y fichajes.
   - `views/empleado/`: panel personal, horarios, francos, vacaciones y sueldos.
   - `views/participante/configuration.jsx`: configuración compartida con contenido condicionado por rol.
-- `components/` contiene elementos reutilizables como `AppShell`, `Sidebar`, `Navbar`, `Footer`, `EmployeeIdentity`, `NotificationBell`, `PaginationControls`, `Select`, `SuggestInput`, `FeedbackHost`, `CompanyCatalogs` y `AttendanceImport`.
+- `components/` contiene elementos reutilizables como `AppShell`, `Sidebar`, `Navbar`, `Footer`, `EmployeeIdentity`, `NotificationBell`, `PaginationControls`, `Select`, `SuggestInput`, `DateTimeFields` (`DateField`, `MonthField`, `TimeField`), `LoadingScreen`, `icons`, `FeedbackHost`, `CompanyCatalogs` y `AttendanceImport`. `fieldStyles.js` tiene la clase común de los campos.
 - `components/cards/` contiene tarjetas de indicadores diferenciadas por rol. Reutilizarlas antes de duplicar estructura o estilos.
 - `hooks/usePagination.js` comparte la paginación de listados.
 - `data/` contiene estructuras que completa `lib/store.js`, reglas, tipos de turno y datos ilustrativos; no usar datos de muestra como fuente de datos reales.
@@ -184,6 +184,20 @@ El esquema completo, con políticas y funciones, está en `database/schema.sql`.
 6. Si tocas Sidebar, navegación, identidad o autenticación demo, verifica ambos roles y las rutas asociadas.
 7. Para cambios funcionales, valida la interfaz si es posible y ejecuta `npm run build`. Para cambios solo documentales no hace falta compilar, salvo que existan pruebas documentales.
 8. No agregues dependencias salvo que la solución realmente las requiera.
+
+## Reglas de la versión 2
+
+- Fechas, meses y horas: usar `DateField`, `MonthField` y `TimeField`; nunca `<input type="date|month|time">`.
+- Desplegables de empleado: el texto de cada opción es `employeeOptionLabel(employee)` ("Nombre — CUIL ..."), de `data/employeeDirectory.js`.
+- Campos de formulario: clase `fieldClass` de `components/fieldStyles.js`. El alto de todos los campos sale de `--field-height` en `styles.css` (inputs, selects, desplegables y la clase `hr-field`); no fijar `h-9`, `py-2.5` ni alturas propias.
+- Datos del empleado en tablas y listas: usar `EmployeeIdentity` pasando `employeeId`; muestra siempre "Leg. #N • Puesto • Área" tomado del directorio, con el mismo avatar y tamaño de letra.
+- Selección de días de franco (empleado y empleador): `components/FrancoDatePicker.jsx`.
+- Vacaciones del empleador: dos campos (desde / hasta) sin límite de año; solo se bloquean los días pasados.
+- Botones: tilde (`CheckIcon`) para confirmar un formulario y "+" (`PlusIcon`) solo para agregar un elemento a una lista.
+- Ventanas flotantes nuevas (paneles, modales): llamar `useExclusiveOverlay(open, close)` de `lib/overlays.js`.
+- Tarjetas de indicadores: van abajo del formulario de cada pantalla (primero el formulario de carga, después las tarjetas y la tabla).
+- Contraseñas provisorias: `generatePassword()` de `lib/passwords.js` (siempre cumple la política).
+- Lecturas de tablas que crecen: siempre con `select` de `lib/store.js`, que pagina de a 1000 filas.
 
 ## Planes y módulos
 

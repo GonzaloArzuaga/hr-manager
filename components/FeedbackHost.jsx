@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { closeDialog, dismissToast, useFeedback } from "../lib/feedback";
+import { announceOverlay } from "../lib/overlays";
 
 const toastStyles = {
   success: { box: "border-emerald-200 bg-white", icon: "bg-emerald-100 text-emerald-700", path: "M5 13l4 4L19 7" },
@@ -14,6 +15,8 @@ function Dialog({ dialog }) {
   const confirmRef = useRef(null);
 
   useEffect(() => {
+    // Una ventana de confirmación cierra notificaciones, calendarios y desplegables abiertos
+    announceOverlay("feedback-dialog");
     setValue("");
     setError("");
     window.setTimeout(() => (fieldRef.current ?? confirmRef.current)?.focus(), 0);

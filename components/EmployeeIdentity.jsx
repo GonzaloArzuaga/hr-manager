@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { getEmployeeAvatar } from "../data/employeeAvatars";
+import { employeeDirectory } from "../data/employeeDirectory";
 
 const avatarSizes = {
   sm: "h-6 w-6 text-[0.5rem]",
@@ -39,20 +40,24 @@ export default function EmployeeIdentity({
   avatarUrl,
   avatarStyle = "blue",
   avatarClassName = "",
-  size = "md",
   className = "",
-  nameClassName = "",
   nameExtra = null,
-  metadataClassName = "",
 }) {
+  // Mismo tamaño de avatar y de letra en todos los módulos
+  const size = "md";
+  const nameClassName = "text-[0.625rem] leading-snug";
+  const metadataClassName = "text-[0.5625rem] font-normal";
   const [brokenUrl, setBrokenUrl] = useState(null);
   const candidateUrl = avatarUrl ?? getEmployeeAvatar(name);
   // Si la foto ya no existe (por ejemplo, el empleado la quitó) se muestran las iniciales
   const resolvedAvatarUrl = candidateUrl && candidateUrl !== brokenUrl ? candidateUrl : null;
-  const metadata = [
-    employeeId ? `Leg. #${employeeId}` : null,
-    department,
-  ].filter(Boolean).join(" • ");
+  // Mismo dato en todos los módulos: "Leg. #N • Puesto • Área", tomado del directorio
+  const entry =
+    employeeDirectory.find((item) => employeeId !== undefined && item.id === String(employeeId)) ??
+    employeeDirectory.find((item) => item.name === name);
+  const metadata = entry
+    ? [`Leg. #${entry.id}`, entry.role, entry.department].filter(Boolean).join(" • ")
+    : [employeeId ? `Leg. #${employeeId}` : null, department].filter(Boolean).join(" • ");
 
   return (
     <div className={`flex min-w-0 items-center gap-2 ${className}`}>
@@ -80,8 +85,7 @@ export default function EmployeeIdentity({
         </span>
         {(metadata || detail) && (
           <span className={`block truncate text-slate-500 ${metadataClassName}`}>
-            {metadata}
-            {metadata && detail ? ` • ${detail}` : detail}
+            {metadata || detail}
           </span>
         )}
       </span>
