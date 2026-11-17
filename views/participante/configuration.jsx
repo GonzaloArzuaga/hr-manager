@@ -744,6 +744,27 @@ function ParticipantConfiguration({ userType = "employer" }) {
                         Si se desactiva, las solicitudes que cumplen las reglas se aprueban solas.
                       </p>
                     </fieldset>
+                    <fieldset className="mt-5 space-y-2">
+                      <legend className="mb-2 text-[0.6875rem] font-semibold text-slate-700">
+                        Fichajes
+                      </legend>
+                      <label className="flex items-center gap-2 text-[0.625rem] text-slate-700">
+                        <input
+                          checked={rules.employeeSelfClockIn !== false}
+                          className="rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                          id="employee-self-clock-in"
+                          onChange={(event) => {
+                            setRules((current) => ({ ...current, employeeSelfClockIn: event.target.checked }));
+                            setNotice("");
+                          }}
+                          type="checkbox"
+                        />
+                        Los empleados registran su entrada y salida desde su panel
+                      </label>
+                      <p className="text-[0.6875rem] text-slate-500">
+                        Si se desactiva, el botón "Registrar entrada" no aparece y solo el empleador carga los fichajes.
+                      </p>
+                    </fieldset>
                     <div className="mt-5 flex justify-end">
                       <button
                         className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-[0.5625rem] font-bold text-blue-800 transition-colors hover:bg-blue-100 disabled:opacity-60"

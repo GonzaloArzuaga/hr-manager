@@ -219,12 +219,12 @@ export default function SueldosEmployee() {
                   <col className="w-[8.75rem]" />
                 </colgroup>
                 <thead>
-                  <tr className="h-10 border-b border-slate-200 bg-[#f0f4ff] text-center text-[0.5rem] font-bold uppercase tracking-wide text-slate-600">
+                  <tr className="h-10 border-b border-slate-200 bg-[#f0f4ff] text-[0.5rem] font-bold uppercase tracking-wide text-slate-600">
                     <th className="px-3 py-3 font-semibold" scope="col">Período</th>
                     <th className="px-3 py-3 font-semibold" scope="col">Monto liquidado</th>
                     <th className="px-3 py-3 font-semibold" scope="col">Fecha de pago</th>
                     <th className="px-3 py-3 font-semibold" scope="col">Estado del sueldo</th>
-                    <th className="px-3 py-3 font-semibold" scope="col">Acciones</th>
+                    <th className="px-3 py-3 text-right font-semibold" scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -232,23 +232,23 @@ export default function SueldosEmployee() {
                     const isPending = payroll.status === "Pendiente";
                     return (
                     <tr
-                      className={`h-[3.625rem] text-center transition-colors hover:bg-slate-50/80 ${
+                      className={`h-[3.625rem] transition-colors hover:bg-slate-50/80 ${
                         isPending ? "bg-amber-50/30" : ""
                       }`}
                       key={payroll.id}
                     >
-                      <td className="whitespace-nowrap px-3 py-3 text-center align-middle font-bold text-slate-900">
+                      <td className="whitespace-nowrap px-3 py-3 align-middle font-bold text-slate-900">
                         {payroll.period}
                       </td>
-                      <td className={`whitespace-nowrap px-3 py-3 text-center align-middle font-bold ${
+                      <td className={`whitespace-nowrap px-3 py-3 align-middle font-bold ${
                         isPending ? "text-slate-500" : "text-slate-900"
                       }`}>
                         {isPending ? "$ -" : `$ ${formatCurrency(payroll.net)}`}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-center align-middle text-slate-600">
+                      <td className="whitespace-nowrap px-3 py-3 align-middle text-slate-600">
                         {isPending ? "—" : payroll.paymentDate}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-center align-middle">
+                      <td className="whitespace-nowrap px-3 py-3 align-middle">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[0.5625rem] font-semibold ${
                           isPending
                             ? "bg-amber-100 text-amber-800"
@@ -258,7 +258,7 @@ export default function SueldosEmployee() {
                           {payroll.status}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-center align-middle">
+                      <td className="px-3 py-3 text-right align-middle">
                         {isPending ? (
                           <span className="text-slate-400" title="Recibo pendiente de acreditación">
                             —

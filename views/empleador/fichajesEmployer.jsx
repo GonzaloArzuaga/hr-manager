@@ -84,13 +84,15 @@ function buildRow(employee, day, dateKey) {
   const end = schedule?.ends_at_snapshot?.slice(0, 5) ?? "";
   const inTime = localTime(record?.clock_in_at);
   const outTime = localTime(record?.clock_out_at);
-  const lateMinutes = record && start ? minutesOf(inTime) - minutesOf(start) : 0;
+  const lateMinutes = record && start && !justifiedLabels[type] ? minutesOf(inTime) - minutesOf(start) : 0;
 
   let state;
-  if (record) {
-    state = record.status === "late" ? "late" : "present";
-  } else if (justifiedLabels[type]) {
+  // Si ese día tiene vacaciones, licencia o franco aprobado no se evalúa la llegada:
+  // nunca queda como ausente ni como tarde, aunque haya fichado.
+  if (justifiedLabels[type]) {
     state = type;
+  } else if (record) {
+    state = record.status === "late" ? "late" : "present";
   } else if (type === "unscheduled") {
     state = "unscheduled";
   } else if (dateKey < today) {
@@ -140,6 +142,15 @@ function matchesFilter(row, filter) {
 }
 
 function EntryCell({ row }) {
+  // Fichó en un día de vacaciones, licencia o franco: se muestra la hora y el motivo, sin evaluar la llegada
+  if (row.record && justifiedLabels[row.state]) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="font-bold text-slate-900">{row.inTime} hs</span>
+        <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">{justifiedLabels[row.state]}</span>
+      </div>
+    );
+  }
   if (row.record) {
     const late = row.state === "late";
     return (
@@ -486,11 +497,16 @@ export default function FichajeEmployer() {
             <form className="space-y-3" onSubmit={submit}>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <div className="rounded-lg border border-slate-200/80 p-3">
-                  <label className={labelClassName} htmlFor="fichaje-employee">
-                    Empleado <span aria-hidden="true" className="text-red-600">*</span>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[0.6875rem] font-semibold text-blue-800">
+                      Empleado <span aria-hidden="true" className="text-red-600">*</span>
+                    </span>
+                  </div>
+                  <label className="block text-[0.5625rem] font-medium text-slate-600" htmlFor="fichaje-employee">
+                    Colaborador
                   </label>
                   <Select
-                    className={inputClassName}
+                    className={`${inputClassName} mt-1`}
                     disabled={Boolean(form.recordId)}
                     id="fichaje-employee"
                     onChange={(event) => {
@@ -508,13 +524,13 @@ export default function FichajeEmployer() {
                       </option>
                     ))}
                   </Select>
-                  <p className="mt-1.5 text-[0.5625rem] text-slate-500">
-                    {formEmployee
-                      ? formSchedule
+                  {formEmployee && (
+                    <p className="mt-1.5 text-[0.5625rem] text-slate-500">
+                      {formSchedule
                         ? `Turno de esa semana: ${formSchedule.shift_name_snapshot}, ${formSchedule.starts_at_snapshot.slice(0, 5)} a ${formSchedule.ends_at_snapshot.slice(0, 5)}`
-                        : "No tiene horario asignado esa semana."
-                      : "Elegí a quién le cargás el fichaje."}
-                  </p>
+                        : "No tiene horario asignado esa semana."}
+                    </p>
+                  )}
                 </div>
 
                 <fieldset className="rounded-lg border border-slate-200/80 p-3">

@@ -25,7 +25,7 @@ insert into public.system_admins (auth_user_id, display_name)
 select id, 'Nombre del administrador' from auth.users where email = 'email@admin.com';
 ```
 
-Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql` y `database/actualizacion_v2_planes.sql`.
+Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql` `database/actualizacion_v2_planes.sql` y `database/actualizacion_v2_1.sql`.
 
 **Datos de demostración (opcional).** Después del seed se puede ejecutar `database/datos_demo_anual.sql`: agrega 20 empleados sin cuenta a "Empresa Test SRL" y un año completo de horarios, francos, vacaciones, fichajes y sueldos, para que Estadísticas y los historiales muestren datos. Se puede volver a ejecutar sin duplicar nada. Los recibos de esos sueldos no tienen PDF: al abrirlos el sistema avisa que son de demostración.
 
@@ -190,7 +190,7 @@ El empleado (al solicitar) y el empleador (al asignar) eligen los días con el m
 
 ### Vacaciones
 
-El empleador carga las vacaciones con dos campos separados, **Desde** y **Hasta**, sin límite de año: solo se bloquean los días pasados. La cantidad de días elegidos se ve en grande y hay un botón para cancelar la selección.
+El empleador (al asignar) y el empleado (al solicitar) eligen las vacaciones con dos campos separados, **Fecha desde** y **Fecha hasta**, sin límite de año. Al empleador solo se le bloquean los días pasados; al empleado, además, los que no respetan el aviso previo de la empresa. La cantidad de días elegidos se ve en grande y hay un botón para cancelar la selección.
 
 ### Videos de la demostración
 
@@ -199,6 +199,12 @@ Los enlaces están en `data/demoVideos.js` y apuntan al bucket `videosAbout` de 
 ### Estructura de la empresa
 
 En Configuración el empleador administra puestos, áreas y sucursales: agregar, renombrar, desactivar y eliminar los que no tienen empleados. Lo desactivado deja de ofrecerse en el alta, pero no cambia a quienes ya lo tienen.
+
+### Fichaje del empleado y días justificados
+
+En Configuración → Reglas de negocio, el empleador decide si los empleados registran su entrada y salida desde su panel ("Los empleados registran su entrada y salida desde su panel", columna `business_rules.employee_self_clock_in`). Si lo desactiva, el botón "Registrar entrada" no aparece y la base rechaza el fichaje del empleado; el empleador sigue cargándolos en Fichajes.
+
+Un día con vacaciones aprobadas, franco aprobado o licencia no se evalúa: no cuenta como ausencia ni como llegada tarde, aunque el empleado haya fichado. Lo controla el disparador `attendance_records_check` (`private.is_justified_day`) para cualquier fichaje (del empleado, del empleador o importado), y Fichajes muestra el motivo en lugar de "Puntual" o "Sin fichar".
 
 ### Importar fichajes
 
@@ -220,7 +226,7 @@ Todos los campos de todas las pantallas (textos, desplegables, fechas, horas y b
 
 ### Orden de las pantallas y datos del empleado
 
-En cada módulo del empleador va primero el formulario de carga (registrar, asignar), después las tarjetas de indicadores y al final la tabla. En todas las tablas y listas el empleado se muestra igual, con `components/EmployeeIdentity.jsx`: avatar, nombre y "Leg. #N • Puesto • Área".
+En cada módulo va primero el formulario de carga (registrar, asignar, solicitar), después las tarjetas de indicadores y al final la tabla. Todas las tablas usan la clase `hr-data-table` de `styles.css`: texto a la izquierda, encabezado celeste en mayúsculas sin cortes de línea y el mismo relleno de celdas. En todas las tablas y listas el empleado se muestra igual, con `components/EmployeeIdentity.jsx`: avatar, nombre y "Leg. #N • Puesto • Área".
 
 ### Ventanas flotantes
 
@@ -228,7 +234,7 @@ Solo una puede estar abierta: al abrir las notificaciones, un calendario, un des
 
 ### Carga de las pantallas
 
-Mientras se leen los datos se muestra la forma de la pantalla que viene (`components/LoadingScreen.jsx`): el menú y bloques grises en lugar de las tarjetas, el formulario y la tabla.
+Mientras se leen los datos se muestra la forma de la pantalla que viene (`components/LoadingScreen.jsx`): el menú y bloques grises en lugar del formulario, las tarjetas, los paneles y la tabla. Cada pantalla tiene su propia forma en `pageLayouts` (por ejemplo, Fichajes: formulario de 3 bloques, 3 tarjetas y una tabla de 6 columnas).
 
 ### Desplegables
 

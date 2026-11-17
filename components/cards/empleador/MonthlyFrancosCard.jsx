@@ -94,26 +94,26 @@ export default function MonthlyFrancosCard({ employees, requests, weeklyDaysOff,
           </button>
           {showDetail && (
             <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-slate-100">
-              <table className="w-full text-left text-[0.625rem]">
-                <thead className="sticky top-0 bg-slate-50 text-[0.5625rem] uppercase tracking-wider text-slate-500">
+              <table className="hr-data-table w-full">
+                <thead className="sticky top-0">
                   <tr>
-                    <th className="px-3 py-2">Empleado</th>
-                    <th className="px-3 py-2 text-center">Corresponden</th>
-                    <th className="px-3 py-2 text-center">Aprobados</th>
-                    <th className="px-3 py-2 text-center">Pendientes</th>
-                    <th className="px-3 py-2 text-center">Faltan</th>
+                    <th>Empleado</th>
+                    <th className="text-center">Corresponden</th>
+                    <th className="text-center">Aprobados</th>
+                    <th className="text-center">Pendientes</th>
+                    <th className="text-center">Faltan</th>
                   </tr>
                 </thead>
                 <tbody>
                   {summary.rows.map((row) => (
-                    <tr className="border-t border-slate-100" key={row.employee.id}>
-                      <td className="px-3 py-1.5">
+                    <tr key={row.employee.id}>
+                      <td>
                         <EmployeeIdentity avatarStyle={row.employee.avatarStyle} employeeId={row.employee.id} name={row.employee.name} />
                       </td>
-                      <td className="px-3 py-1.5 text-center">{row.allowance}</td>
-                      <td className="px-3 py-1.5 text-center text-emerald-700">{row.approved}</td>
-                      <td className="px-3 py-1.5 text-center text-amber-600">{row.pending}</td>
-                      <td className={`px-3 py-1.5 text-center font-bold ${row.remaining ? "text-blue-800" : "text-slate-400"}`}>{row.remaining}</td>
+                      <td className="text-center">{row.allowance}</td>
+                      <td className="text-center text-emerald-700">{row.approved}</td>
+                      <td className="text-center text-amber-600">{row.pending}</td>
+                      <td className={`text-center font-bold ${row.remaining ? "text-blue-800" : "text-slate-400"}`}>{row.remaining}</td>
                     </tr>
                   ))}
                 </tbody>

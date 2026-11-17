@@ -266,8 +266,8 @@ function App() {
 
   // Mientras se resuelve una pantalla del panel se muestra su forma (menú, tarjetas, tabla)
   const goingToPanel = !publicViews[path] && isKnownPath(path) && path !== "/login/change-temporary-password";
-  if (state.status === "loading") return goingToPanel ? <ShellSkeleton /> : <PublicLoading />;
-  if (pending && goingToPanel && !(state.status === "ready" && state.shell)) return <ShellSkeleton />;
+  if (state.status === "loading") return goingToPanel ? <ShellSkeleton path={path} /> : <PublicLoading />;
+  if (pending && goingToPanel && !(state.status === "ready" && state.shell)) return <ShellSkeleton path={path} />;
   if (state.status === "message") {
     return (
       <FullScreenMessage title={state.title}>
@@ -296,7 +296,7 @@ function App() {
   const switching = pending && goingToPanel && path !== state.path;
   return (
     <AppShell loading={pending} path={switching ? path : state.path}>
-      {switching ? <PageSkeleton /> : <View key={state.path} {...props} />}
+      {switching ? <PageSkeleton path={path} /> : <View key={state.path} {...props} />}
     </AppShell>
   );
 }

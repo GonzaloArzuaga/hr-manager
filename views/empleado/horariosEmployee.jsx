@@ -11,8 +11,23 @@ import Select from "../../components/Select";
 
 const weekdayLabels = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
 
+// Días de la semana que tienen vacaciones o franco aprobado
+function justifiedDaysOf(entry) {
+  if (!entry.weekStartDate || entry.employeeId === undefined) return [];
+  const [year, month, day] = entry.weekStartDate.split("-").map(Number);
+  return Array.from({ length: 7 }, (_, offset) => new Date(year, month - 1, day + offset))
+    .map((date) => getDayAssignment(date, entry.employeeId).type)
+    .filter((type) => type === "vacation" || type === "franco");
+}
+
 function getAttendance(entry) {
-  if (!entry.clockIn) return { status: "Ausente" };
+  if (!entry.clockIn) {
+    // Con vacaciones en esa semana no se cuenta como ausencia
+    const justified = justifiedDaysOf(entry);
+    if (justified.includes("vacation")) return { status: "Vacaciones" };
+    if (justified.length === 7) return { status: "Franco" };
+    return { status: "Ausente" };
+  }
 
   const [scheduledHours, scheduledMinutes] = entry.scheduledStart
     .split(":")
@@ -601,6 +616,8 @@ export default function HorariosEmployee() {
                                 ? "border-emerald-300 bg-emerald-100 text-emerald-900"
                                 : attendance.status === "Ausente"
                                   ? "border-red-300 bg-red-100 text-red-900"
+                                  : attendance.status === "Vacaciones" || attendance.status === "Franco"
+                                    ? "border-violet-200 bg-violet-50 text-violet-800"
                                   : "border-amber-300 bg-amber-100 text-amber-900"
                             }`}
                           >

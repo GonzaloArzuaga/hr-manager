@@ -787,14 +787,11 @@ export default function FrancosEmployer() {
                     </button>
                   ))}
                 </div>
-                <label className="relative inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.5625rem] font-semibold text-slate-700">
-                  <Icon className="h-3 w-3 text-slate-500">
-                    <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </Icon>
+                <label className="w-44">
                   <span className="sr-only">Filtrar por mes</span>
                   <Select
                     aria-label="Filtrar por mes"
-                    className="w-36 cursor-pointer border-0 bg-transparent p-0 pr-4 text-[0.5625rem] font-semibold focus:ring-0"
+                    className={fieldClass}
                     onChange={(event) => setMonth(event.target.value)}
                     value={month}
                   >

@@ -192,10 +192,13 @@ El esquema completo, con políticas y funciones, está en `database/schema.sql`.
 - Campos de formulario: clase `fieldClass` de `components/fieldStyles.js`. El alto de todos los campos sale de `--field-height` en `styles.css` (inputs, selects, desplegables y la clase `hr-field`); no fijar `h-9`, `py-2.5` ni alturas propias.
 - Datos del empleado en tablas y listas: usar `EmployeeIdentity` pasando `employeeId`; muestra siempre "Leg. #N • Puesto • Área" tomado del directorio, con el mismo avatar y tamaño de letra.
 - Selección de días de franco (empleado y empleador): `components/FrancoDatePicker.jsx`.
-- Vacaciones del empleador: dos campos (desde / hasta) sin límite de año; solo se bloquean los días pasados.
+- Vacaciones (empleador y empleado): dos campos (desde / hasta) sin límite de año.
 - Botones: tilde (`CheckIcon`) para confirmar un formulario y "+" (`PlusIcon`) solo para agregar un elemento a una lista.
 - Ventanas flotantes nuevas (paneles, modales): llamar `useExclusiveOverlay(open, close)` de `lib/overlays.js`.
-- Tarjetas de indicadores: van abajo del formulario de cada pantalla (primero el formulario de carga, después las tarjetas y la tabla).
+- Tarjetas de indicadores: van abajo del formulario de cada pantalla (primero el formulario de carga, después las tarjetas y la tabla), también en las vistas del empleado y del administrador.
+- Tablas: siempre con la clase `hr-data-table`; no fijar alineación, fondo ni tamaño del encabezado con clases propias (usar `text-center` o `text-right` solo en columnas puntuales, como Acciones).
+- Pantallas de carga: al agregar una ruta del panel, sumar su forma en `pageLayouts` de `components/LoadingScreen.jsx`.
+- Asistencia: un día con vacaciones, franco aprobado o licencia nunca se marca como ausente ni tarde (`justifiedLabels` en Fichajes y `private.is_justified_day` en la base).
 - Contraseñas provisorias: `generatePassword()` de `lib/passwords.js` (siempre cumple la política).
 - Lecturas de tablas que crecen: siempre con `select` de `lib/store.js`, que pagina de a 1000 filas.
 

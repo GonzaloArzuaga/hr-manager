@@ -37,78 +37,59 @@ html {
   line-height: 1.25;
 }
 
+/* Tablas: un solo formato en todos los módulos (empleador, empleado y administrador).
+   Texto alineado a la izquierda, encabezado celeste en mayúsculas y sin cortes de línea,
+   mismo relleno de celdas y separadores. text-center / text-right siguen funcionando. */
 .hr-data-table {
   border-collapse: collapse;
   color: #334155;
   font-size: 0.625rem;
   line-height: 1.5;
-}
-
-.hr-data-table--standard {
   text-align: left;
-}
-
-.hr-data-table.hr-data-table--standard th,
-.hr-data-table.hr-data-table--standard td {
-  padding: 0.625rem 0.75rem;
-  text-align: inherit;
-  vertical-align: middle;
-}
-
-.hr-data-table.hr-data-table--standard thead tr {
-  border-bottom: 1px solid #e2e8f0;
-  background-color: #f0f4ff;
-  color: #475569;
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.hr-data-table--standard th.text-center,
-.hr-data-table--standard td.text-center {
-  text-align: center;
-}
-
-.hr-data-table--standard th.text-right,
-.hr-data-table--standard td.text-right {
-  text-align: right;
-}
-
-.hr-data-table--standard th.text-left,
-.hr-data-table--standard td.text-left {
-  text-align: left;
-}
-
-.hr-data-table--standard tbody tr:not(:last-child) {
-  border-bottom: 1px solid #f1f5f9;
 }
 
 .hr-data-table th,
 .hr-data-table td {
   padding: 0.625rem 0.75rem;
-  text-align: center;
+  text-align: inherit;
   vertical-align: middle;
-}
-
-.hr-data-table td.employee-identity-cell {
-  padding-right: 5px;
-  padding-left: 5px;
-  text-align: left;
 }
 
 .hr-data-table thead tr {
   border-bottom: 1px solid #e2e8f0;
-  background-color: #f1f5f9;
+  background-color: #f0f4ff;
+}
+
+.hr-data-table thead th {
+  background-color: transparent;
   color: #475569;
   font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hr-data-table tbody td {
+  font-size: 0.625rem;
+}
+
+.hr-data-table th.text-center,
+.hr-data-table td.text-center {
+  text-align: center;
+}
+
+.hr-data-table th.text-right,
+.hr-data-table td.text-right {
+  text-align: right;
 }
 
 .hr-data-table tbody tr:not(:last-child) {
   border-bottom: 1px solid #f1f5f9;
+}
+
+.hr-data-table tbody tr:hover {
+  background-color: #f8fafc;
 }
 
 .hr-data-table--comparison thead th:nth-child(3) {

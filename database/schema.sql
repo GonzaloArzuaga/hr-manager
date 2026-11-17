@@ -2568,3 +2568,77 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER, TEXT[], JSONB, BOOLEAN) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER, TEXT[], JSONB, BOOLEAN) TO authenticated;
+
+-- ==========================================================================
+-- 14. Versión 2.1: fichaje propio del empleado y días justificados
+--     (ver actualizacion_v2_1.sql)
+-- ==========================================================================
+
+-- 2. Fichaje propio del empleado ---------------------------------------------
+
+ALTER TABLE public.business_rules
+  ADD COLUMN IF NOT EXISTS employee_self_clock_in BOOLEAN NOT NULL DEFAULT TRUE;
+
+COMMENT ON COLUMN public.business_rules.employee_self_clock_in IS
+  'Si es TRUE, el empleado registra su entrada y salida desde su panel. Si es FALSE, solo el empleador carga los fichajes.';
+
+-- 3. Días justificados ------------------------------------------------------
+
+-- TRUE si ese día el empleado tiene vacaciones aprobadas, franco aprobado o está de licencia
+CREATE OR REPLACE FUNCTION private.is_justified_day(p_employee_id BIGINT, p_date DATE)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+           SELECT 1 FROM public.vacation_requests v
+            WHERE v.employee_id = p_employee_id
+              AND v.status = 'approved'
+              AND p_date BETWEEN v.start_date AND v.end_date)
+      OR EXISTS (
+           SELECT 1
+             FROM public.days_off_request_dates d
+             JOIN public.days_off_requests r ON r.id = d.request_id
+            WHERE r.employee_id = p_employee_id
+              AND r.status = 'approved'
+              AND d.requested_date = p_date)
+      OR EXISTS (
+           SELECT 1 FROM public.employees e
+            WHERE e.id = p_employee_id
+              AND e.employment_status = 'on_leave');
+$$;
+
+-- Se ejecuta en cada fichaje, venga del empleado, del empleador o de la importación
+CREATE OR REPLACE FUNCTION private.check_attendance_record()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+BEGIN
+  -- El empleado solo puede fichar si la empresa lo permite
+  IF v_acc.id IS NOT NULL AND v_acc.role = 'employee' AND NOT COALESCE(
+       (SELECT b.employee_self_clock_in FROM public.business_rules b WHERE b.company_id = NEW.company_id),
+       TRUE) THEN
+    RAISE EXCEPTION 'Tu empresa no tiene habilitado el fichaje desde el panel del empleado. Pedile al empleador que lo registre.';
+  END IF;
+
+  -- Con vacaciones, franco o licencia no se computa tardanza
+  IF NEW.status = 'late' AND private.is_justified_day(NEW.employee_id, NEW.work_date) THEN
+    NEW.status := 'present';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS attendance_records_check ON public.attendance_records;
+CREATE TRIGGER attendance_records_check
+  BEFORE INSERT OR UPDATE ON public.attendance_records
+  FOR EACH ROW EXECUTE FUNCTION private.check_attendance_record();
+
+-- Los fichajes que ya estaban cargados como tarde en un día justificado
+UPDATE public.attendance_records a
+   SET status = 'present'
+ WHERE a.status = 'late'
+   AND private.is_justified_day(a.employee_id, a.work_date);

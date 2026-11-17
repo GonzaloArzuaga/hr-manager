@@ -392,13 +392,6 @@ export default function HorariosEmployer() {
     }
   }
 
-  function resetSchedules() {
-    setSchedules([...horariosData.schedules]);
-    setSearch("");
-    setSelectedWeekKey(assignableWeeks[0].key);
-    clearForm();
-  }
-
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans antialiased text-slate-800">
       <main className="min-w-0 flex-1 px-4 py-4 md:px-5">
@@ -641,24 +634,6 @@ export default function HorariosEmployer() {
                     value={search}
                   />
                 </div>
-                <button
-                  aria-label="Restablecer horarios"
-                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
-                  onClick={resetSchedules}
-                  title="Restablecer horarios"
-                  type="button"
-                >
-                  <Icon className="text-xs" name="solid fa-rotate-right" />
-                </button>
-                <button
-                  aria-label="Limpiar filtro"
-                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
-                  onClick={() => setSearch("")}
-                  title="Limpiar filtro"
-                  type="button"
-                >
-                  <Icon className="text-xs" name="solid fa-sliders" />
-                </button>
               </div>
             </div>
             {view === "list" ? (
