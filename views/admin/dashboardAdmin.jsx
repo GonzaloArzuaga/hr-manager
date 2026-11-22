@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ChartCanvas from "../../components/ChartCanvas";
+import DashboardAdminSkeleton from "../../components/skeleton/admin/DashboardAdminSkeleton";
 import { adminDashboard, countPendingDemoRequests } from "../../lib/api";
 import { store } from "../../lib/store";
 import { monthShort } from "../../lib/workforce";
@@ -105,6 +106,8 @@ export default function DashboardAdmin() {
     };
   }, [data]);
 
+  if (!data && !error) return <DashboardAdminSkeleton />;
+
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-slate-800 antialiased">
       <main className="min-w-0 flex-1 px-4 py-4 md:px-5">
@@ -122,7 +125,6 @@ export default function DashboardAdmin() {
           </header>
 
           {error && <p className="text-[0.625rem] font-medium text-red-600" role="alert">{error}</p>}
-          {!data && !error && <p className="text-[0.625rem] text-slate-500">Cargando el panel…</p>}
 
           {data && (
             <>

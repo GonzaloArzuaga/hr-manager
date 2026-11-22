@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { DataTableToolbar, TableSearchInput } from "../../components/DataTableToolbar";
 import PaginationControls from "../../components/PaginationControls";
 // import WeeklyHoursCard from "../../components/cards/empleado/WeeklyHoursCard";
 // import WorkdayTypeCard from "../../components/cards/empleado/WorkdayTypeCard";
@@ -299,11 +300,6 @@ export default function HorariosEmployee() {
     totalPages,
   } = usePagination(filteredHistory, pageSize);
 
-  function showDemoNotice() {
-    setHistorySearch("");
-    setNotice("Se limpió el filtro del historial.");
-  }
-
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-slate-900 antialiased">
       <main className="min-w-0 flex-1 px-4 py-4 md:px-5">
@@ -551,37 +547,17 @@ export default function HorariosEmployee() {
 
           <section
             aria-labelledby="history-heading"
-            className="rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-sm"
+            className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm"
           >
-            <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-sm font-bold tracking-tight text-slate-900" id="history-heading">
-                  Horarios Semanales
-                </h2>
-              </div>
-              <div className="flex w-full items-center gap-2 md:w-auto">
-                <label className="relative min-w-0 flex-1">
-                  <span className="sr-only">Buscar por mes o semana</span>
-                  <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" path="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  <input
-                    className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2 pl-9 pr-3 text-[0.5625rem] font-medium text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    onChange={(event) => setHistorySearch(event.target.value)}
-                    placeholder="Filtrar por mes o semana..."
-                    type="search"
-                    value={historySearch}
-                  />
-                </label>
-                <button
-                  className="inline-flex shrink-0 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[0.5625rem] font-bold text-slate-700 shadow-sm hover:bg-slate-50"
-                  onClick={() => showDemoNotice("Filtros de historial")}
-                  type="button"
-                >
-                  <Icon className="mr-1.5 h-4 w-4 text-slate-500" path="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  Filtros
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 overflow-x-auto">
+            <DataTableToolbar title="Horarios Semanales" titleId="history-heading">
+              <TableSearchInput
+                ariaLabel="Buscar por mes o semana"
+                onChange={(event) => setHistorySearch(event.target.value)}
+                placeholder="Filtrar por mes o semana..."
+                value={historySearch}
+              />
+            </DataTableToolbar>
+            <div className="overflow-x-auto">
               <table
                 className="hr-data-table hr-data-table--standard w-full min-w-[37.5rem]"
                 id="history-table"

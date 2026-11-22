@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { DataTableToolbar, TableSearchInput } from "../../components/DataTableToolbar";
 import CurrentPayrollSummaryCard from "../../components/cards/empleado/CurrentPayrollSummaryCard";
 import PaginationControls from "../../components/PaginationControls";
 import { getPayrollStatus, sueldosData } from "../../data/sueldosData";
@@ -154,63 +155,38 @@ export default function SueldosEmployee() {
           )}
 
           <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
-            <div className="flex flex-col justify-between gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-center">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700">
-                  <Icon className="h-4 w-4">
-                    <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </Icon>
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">
-                    Historial de Recibos y Liquidaciones
-                  </h2>
-                  <p className="text-[0.5625rem] text-slate-500">
-                    Listado cronológico de tus comprobantes digitales
-                  </p>
-                </div>
+            <DataTableToolbar title="Historial de Recibos y Liquidaciones">
+              <div
+                aria-label="Filtrar por año"
+                className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[0.5625rem] font-semibold text-slate-600"
+                role="group"
+              >
+                {[...years, "Todos"].map((year) => (
+                  <button
+                    aria-pressed={yearFilter === year}
+                    className={`rounded-md px-2.5 py-1.5 transition-colors ${
+                      yearFilter === year
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "hover:text-slate-900"
+                    }`}
+                    key={year}
+                    onClick={() => setYearFilter(year)}
+                    type="button"
+                  >
+                    {year === "Todos" ? year : `Año ${year}`}
+                  </button>
+                ))}
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <div
-                  aria-label="Filtrar por año"
-                  className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[0.5625rem] font-semibold text-slate-600"
-                  role="group"
-                >
-                  {[...years, "Todos"].map((year) => (
-                    <button
-                      aria-pressed={yearFilter === year}
-                      className={`rounded-md px-2.5 py-1.5 transition-colors ${
-                        yearFilter === year
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "hover:text-slate-900"
-                      }`}
-                      key={year}
-                      onClick={() => setYearFilter(year)}
-                      type="button"
-                    >
-                      {year === "Todos" ? year : `Año ${year}`}
-                    </button>
-                  ))}
-                </div>
-                <label className="relative">
-                  <span className="sr-only">Buscar período o concepto</span>
-                  <Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400">
-                    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </Icon>
-                  <input
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-2.5 text-[0.5625rem] text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-56"
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Buscar período o concepto..."
-                    type="search"
-                    value={search}
-                  />
-                </label>
-              </div>
-            </div>
+              <TableSearchInput
+                ariaLabel="Buscar período o concepto"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar período o concepto..."
+                value={search}
+              />
+            </DataTableToolbar>
 
             <div className="overflow-x-auto">
-              <table className="hr-data-table w-full min-w-[57.5rem] table-fixed border-collapse text-[0.5625rem]">
+              <table className="hr-data-table hr-data-table--standard w-full min-w-[57.5rem] table-fixed border-collapse text-[0.5625rem]">
                 <colgroup>
                   <col className="w-[12.5rem]" />
                   <col className="w-[12.5rem]" />
@@ -232,7 +208,7 @@ export default function SueldosEmployee() {
                     const isPending = payroll.status === "Pendiente";
                     return (
                     <tr
-                      className={`h-[3.625rem] transition-colors hover:bg-slate-50/80 ${
+                      className={`transition-colors hover:bg-slate-50/80 ${
                         isPending ? "bg-amber-50/30" : ""
                       }`}
                       key={payroll.id}

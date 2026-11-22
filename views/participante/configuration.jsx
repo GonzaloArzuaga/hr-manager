@@ -421,6 +421,7 @@ function ParticipantConfiguration({ userType = "employer" }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingRules, setSavingRules] = useState(false);
   const profilePhotoInput = useRef(null);
 
 
@@ -461,7 +462,9 @@ function ParticipantConfiguration({ userType = "employer" }) {
       setNotice("Cada tramo de vacaciones debe tener al menos 1 día.");
       return;
     }
+    setSavingRules(true);
     await persistRules({ ...rules, vacationRanges }, "Reglas guardadas. Se aplican a las solicitudes nuevas.");
+    setSavingRules(false);
   }
 
   async function persistShiftTypes(updatedTypes, successMessage) {
@@ -767,11 +770,18 @@ function ParticipantConfiguration({ userType = "employer" }) {
                     </fieldset>
                     <div className="mt-5 flex justify-end">
                       <button
-                        className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-[0.5625rem] font-bold text-blue-800 transition-colors hover:bg-blue-100 disabled:opacity-60"
+                        aria-busy={savingRules}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-[0.5625rem] font-bold text-blue-800 transition-colors hover:bg-blue-100 disabled:opacity-60"
                         disabled={saving}
                         type="submit"
                       >
-                        Guardar reglas generales
+                        {savingRules && (
+                          <span
+                            aria-hidden="true"
+                            className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700"
+                          />
+                        )}
+                        {savingRules ? "Guardando reglas generales" : "Guardar reglas generales"}
                       </button>
                     </div>
                   </form>

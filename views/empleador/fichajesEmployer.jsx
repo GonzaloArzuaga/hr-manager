@@ -55,8 +55,16 @@ const justifiedLabels = {
   leave: "Licencia",
 };
 
+// Ese día el empleado no fue a trabajar: no se le registran fichajes (también lo valida la base)
+const dayOffMessages = {
+  franco: "Ese día el empleado tiene franco: no se le puede registrar un fichaje.",
+  vacation: "Ese día el empleado está de vacaciones: no se le puede registrar un fichaje.",
+};
+
 const inputClassName =
   "w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500";
+const invalidInputClassName =
+  "w-full rounded-lg border border-red-400 bg-red-50/60 px-2.5 py-1.5 text-[0.5625rem] focus:border-red-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500";
 const labelClassName = "mb-1 block text-[0.6875rem] font-semibold text-slate-700";
 
 const emptyForm = { employeeDbId: "", inDate: "", inTime: "", outDate: "", outTime: "", recordId: null };
@@ -352,6 +360,11 @@ export default function FichajeEmployer() {
 
   const formEmployee = index.employees.find((employee) => String(employee.dbId) === String(form.employeeDbId));
   const formSchedule = formEmployee && form.inDate ? index.scheduleFor(formEmployee.dbId, form.inDate) : null;
+  const formDayType = formEmployee && form.inDate ? index.dayFor(formEmployee, form.inDate).type : null;
+  const formDayOffMessage = dayOffMessages[formDayType] ?? "";
+  // Amarillo al elegir el día; rojo (con las fechas marcadas) después de intentar guardar
+  const dayOffBlocked = Boolean(formDayOffMessage) && error === formDayOffMessage;
+  const dateClassName = dayOffBlocked ? invalidInputClassName : inputClassName;
   const isToday = selectedDate === todayKey();
   const dateLabel = `${weekdayLong[parseDateKey(selectedDate).getDay()]} ${toDisplayDate(selectedDate)}`;
 
@@ -406,6 +419,10 @@ export default function FichajeEmployer() {
     }
     if (form.outTime && !form.outDate) {
       setError("Completá la fecha de salida.");
+      return;
+    }
+    if (formDayOffMessage) {
+      setError(formDayOffMessage);
       return;
     }
     setSaving(true);
@@ -552,7 +569,8 @@ export default function FichajeEmployer() {
                     <label className="text-[0.5625rem] font-medium text-slate-600">
                       Fecha
                       <DateField
-                        className={`${inputClassName} mt-1`}
+                        aria-invalid={dayOffBlocked || undefined}
+                        className={`${dateClassName} mt-1`}
                         max={todayKey()}
                         onChange={(event) => updateForm("inDate", event.target.value)}
                         required
@@ -581,7 +599,8 @@ export default function FichajeEmployer() {
                     <label className="text-[0.5625rem] font-medium text-slate-600">
                       Fecha
                       <DateField
-                        className={`${inputClassName} mt-1`}
+                        aria-invalid={dayOffBlocked || undefined}
+                        className={`${dateClassName} mt-1`}
                         onChange={(event) => updateForm("outDate", event.target.value)}
                         value={form.outDate}
                       />
@@ -598,6 +617,9 @@ export default function FichajeEmployer() {
                 </fieldset>
               </div>
 
+              {formEmployee && formDayOffMessage && !dayOffBlocked && (
+                <p className="text-[0.625rem] font-medium text-amber-700" role="status">{formDayOffMessage}</p>
+              )}
               {error && (
                 <p className="text-[0.625rem] font-medium text-red-600" role="alert">{error}</p>
               )}
@@ -836,9 +858,16 @@ export default function FichajeEmployer() {
                         <div className="flex items-center justify-end gap-1 text-slate-500">
                           <button
                             aria-label={row.record ? `Corregir fichaje de ${row.employee.name}` : `Cargar fichaje de ${row.employee.name}`}
-                            className="rounded-md p-1.5 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                            className="rounded-md p-1.5 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                            disabled={Boolean(dayOffMessages[row.type])}
                             onClick={() => loadRow(row)}
-                            title={row.record ? "Corregir" : "Cargar fichaje"}
+                            title={
+                              dayOffMessages[row.type]
+                                ? `${justifiedLabels[row.type]}: no se registran fichajes`
+                                : row.record
+                                  ? "Corregir"
+                                  : "Cargar fichaje"
+                            }
                             type="button"
                           >
                             <Icon className="h-3.5 w-3.5">

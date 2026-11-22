@@ -575,7 +575,6 @@ export default function HorariosEmployer() {
           >
             <ScheduleSummaryCard
               detail={`de ${activeEmployees.length} activos`}
-              icon="regular fa-id-badge"
               label="Empleados asignados"
               note={`${pendingEmployeeCount} pendientes para esta semana`}
               noteIcon="solid fa-folder-open"

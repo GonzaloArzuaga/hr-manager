@@ -1,4 +1,13 @@
 import React from "react";
+import DashboardAdminSkeleton from "./skeleton/admin/DashboardAdminSkeleton";
+import {
+  DashboardEmployeeSkeleton,
+  FrancosEmployeeSkeleton,
+  HorariosEmployeeSkeleton,
+  SueldosEmployeeSkeleton,
+  VacacionesEmployeeSkeleton,
+} from "./skeleton/empleado";
+import { ConfigurationParticipantSkeleton } from "./skeleton/participante";
 
 // Pantallas de carga. En lugar de un texto "Cargando…" se muestra la forma de la
 // pantalla que viene (menú, encabezado, tarjetas y tabla) mientras llegan los datos.
@@ -138,6 +147,24 @@ function SkeletonPart({ kind, count, rows }) {
 
 // Contenido de una sección del panel, con la forma de la pantalla que se está abriendo
 export function PageSkeleton({ path }) {
+  if (path === "/employer/configuration" || path === "/configuracion") {
+    return <ConfigurationParticipantSkeleton isEmployer />;
+  }
+  if (path === "/employee/configuration") {
+    return <ConfigurationParticipantSkeleton />;
+  }
+
+  const routeSkeletons = {
+    "/admin": DashboardAdminSkeleton,
+    "/employee": DashboardEmployeeSkeleton,
+    "/employee/horarios": HorariosEmployeeSkeleton,
+    "/employee/francos": FrancosEmployeeSkeleton,
+    "/employee/vacaciones": VacacionesEmployeeSkeleton,
+    "/employee/sueldos": SueldosEmployeeSkeleton,
+  };
+  const RouteSkeleton = routeSkeletons[path];
+  if (RouteSkeleton) return <RouteSkeleton />;
+
   const layout = layoutFor(path);
   return (
     <div aria-busy="true" aria-label="Cargando la sección" className="px-4 py-4 md:px-5" data-layout={layout.join(",")} data-testid="page-skeleton" role="status">

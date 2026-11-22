@@ -1323,6 +1323,25 @@ BEGIN
   END IF;
 
   v_date := p_clock_in::DATE;
+
+  -- Con vacaciones o franco aprobados ese día el empleado no fue a trabajar
+  IF EXISTS (
+       SELECT 1 FROM public.vacation_requests v
+        WHERE v.employee_id = p_employee_id
+          AND v.status = 'approved'
+          AND v_date BETWEEN v.start_date AND v.end_date) THEN
+    RAISE EXCEPTION 'El empleado está de vacaciones el %: no se le puede registrar un fichaje', to_char(v_date, 'DD/MM/YYYY');
+  END IF;
+  IF EXISTS (
+       SELECT 1
+         FROM public.days_off_request_dates d
+         JOIN public.days_off_requests r ON r.id = d.request_id
+        WHERE r.employee_id = p_employee_id
+          AND r.status = 'approved'
+          AND d.requested_date = v_date) THEN
+    RAISE EXCEPTION 'El empleado tiene franco el %: no se le puede registrar un fichaje', to_char(v_date, 'DD/MM/YYYY');
+  END IF;
+
   SELECT * INTO v_sched FROM public.work_schedules
    WHERE company_id = v_acc.company_id
      AND employee_id = p_employee_id

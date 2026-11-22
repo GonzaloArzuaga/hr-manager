@@ -25,7 +25,7 @@ insert into public.system_admins (auth_user_id, display_name)
 select id, 'Nombre del administrador' from auth.users where email = 'email@admin.com';
 ```
 
-Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql` `database/actualizacion_v2_planes.sql` y `database/actualizacion_v2_1.sql`.
+Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql` `database/actualizacion_v2_planes.sql`, `database/actualizacion_v2_1.sql` y `database/actualizacion_v2_2.sql`.
 
 **Datos de demostración (opcional).** Después del seed se puede ejecutar `database/datos_demo_anual.sql`: agrega 20 empleados sin cuenta a "Empresa Test SRL" y un año completo de horarios, francos, vacaciones, fichajes y sueldos, para que Estadísticas y los historiales muestren datos. Se puede volver a ejecutar sin duplicar nada. Los recibos de esos sueldos no tienen PDF: al abrirlos el sistema avisa que son de demostración.
 

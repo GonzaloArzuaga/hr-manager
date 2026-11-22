@@ -19,6 +19,16 @@ html {
   }
 }
 
+/* Páginas que ocultan la barra de desplazamiento sin impedir el scroll */
+html.scrollbar-hidden {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+
+html.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 ::-webkit-scrollbar-track {
   background-color: #f5f7ff;
 }
@@ -103,16 +113,6 @@ html {
   padding: 0.5rem 0.75rem !important;
   color: #475569 !important;
   font-size: 0.5rem !important;
-}
-
-/* Barra de progreso al cambiar de sección */
-@keyframes shell-progress {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(300%);
-  }
 }
 
 /* Las tablas anchas se desplazan dentro de su tarjeta en pantallas chicas */
