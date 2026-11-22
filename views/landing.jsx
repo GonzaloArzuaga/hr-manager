@@ -1,208 +1,238 @@
-import React from "react";
+import React, { useEffect } from "react";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import PricingRedirectCard from "../components/cards/PricingRedirectCard";
-import valeriaRossi from "../data/valeria-rossi.png";
+import { navigationItems, SidebarIcon } from "../components/Sidebar";
 
-const capabilities = [
+const navLinks = [
+  { href: "/home", label: "Inicio", current: true },
+  { href: "/about", label: "Sobre Nosotros" },
+  { href: "/price", label: "Precios" },
+];
+
+const facts = [
+  { value: "20 USD", label: "Desde por mes", detail: "Plan Básico para hasta 20 empleados" },
+  { value: "100 %", label: "Recibos digitales", detail: "Cada empleado descarga los suyos en PDF" },
+  { value: "A medida", label: "Reglas configurables", detail: "Francos, avisos previos y aprobaciones según su negocio" },
+  { value: "0", label: "Accesos a datos ajenos", detail: "Información aislada por empresa y por empleado" },
+];
+
+const modules = [
   {
-    title: "Motor de Reglas Automatizado",
-    description:
-      "Cálculo autónomo de antigüedad, escalas salariales y preaviso de francos y licencias según las normativas CCT vigentes.",
-    footer: "Parámetros CCT dinámicos",
-    icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4",
-    footerIcon: "M8 9l4-4 4 4m0 6l-4 4-4-4",
+    title: "Empleados",
+    description: "Legajo, CUIL, puesto, área y sucursal. Alta con cuenta y contraseña provisoria.",
   },
   {
-    title: "Planificación de Turnos y Francos",
-    description:
-      "Un algoritmo predictivo evita solapamientos de descansos y ayuda a garantizar la dotación mínima operativa.",
-    footer: "Prevención de solapamientos",
-    icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
-    footerIcon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
+    title: "Horarios",
+    description: "Un tipo de turno por empleado y por semana, con historial conservado.",
   },
   {
-    title: "Onboarding con Código Único",
-    description:
-      "Vinculación ágil del personal mediante códigos únicos, con autogestión de legajos y solicitudes desde el móvil.",
-    footer: "Autogestión de empleados",
-    icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z",
-    footerIcon: "M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z",
+    title: "Francos",
+    description: "Solicitudes con aviso previo, tope semanal y cálculo de francos del mes.",
   },
   {
-    title: "Auditoría y Recibos Inmutables",
-    description:
-      "Trazabilidad de cambios en nóminas y exportación de libros de sueldos digitales para inspecciones laborales.",
-    footer: "Respaldo jurídico",
-    icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
-    footerIcon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+    title: "Vacaciones",
+    description: "Días corridos según antigüedad, sin superposiciones ni excesos de saldo.",
+  },
+  {
+    title: "Sueldos",
+    description: "Recibos PDF por período, visibles solo para su titular.",
+    optional: true,
+  },
+  {
+    title: "Fichajes",
+    description: "Asistencia diaria, carga individual e importación desde Excel.",
+    optional: true,
+  },
+  {
+    title: "Estadísticas",
+    description: "Cobertura, demanda por franja horaria y vacaciones por mes.",
+    optional: true,
   },
 ];
 
-function Icon({ path, className = "h-4 w-4" }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-    >
-      <path d={path} />
-    </svg>
-  );
+const steps = [
+  {
+    title: "Alta de la empresa",
+    description:
+      "Creamos su empresa con el plan elegido y la cuenta del empleador responsable.",
+  },
+  {
+    title: "Configuración de reglas",
+    description:
+      "Defina tipos de turno, francos semanales, aviso previo, puestos, áreas y sucursales.",
+  },
+  {
+    title: "Incorporación del personal",
+    description:
+      "Dé de alta a sus empleados: cada uno ingresa con su cuenta y gestiona sus solicitudes.",
+  },
+];
+
+function employerIcon(label) {
+  return navigationItems.find((item) => item.label === label && item.employer);
 }
 
-function CapabilityCard({ capability }) {
+function ModuleCard({ module }) {
+  const icon = employerIcon(module.title);
   return (
-    <article className="flex flex-col justify-between overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-      <div className="flex-1 p-5">
-        <span className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-          <Icon className="h-5 w-5" path={capability.icon} />
+    <article className="group flex flex-col rounded-xl border border-slate-200/80 bg-white p-5 transition-shadow hover:shadow-md">
+      <div className="mb-4 flex items-center justify-between">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#edf4ff] text-blue-700 transition-colors group-hover:bg-blue-700 group-hover:text-white">
+          <SidebarIcon className="h-5 w-5" filled={icon.filled} innerPath={icon.innerPath} path={icon.path} />
         </span>
-        <h3 className="mb-2 text-sm font-bold text-slate-900">
-          {capability.title}
-        </h3>
-        <p className="text-xs leading-relaxed text-slate-500">
-          {capability.description}
-        </p>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-[0.625rem] font-semibold ${
+            module.optional ? "bg-slate-100 text-slate-600" : "bg-blue-50 text-blue-700"
+          }`}
+        >
+          {module.optional ? "Según plan" : "Incluido"}
+        </span>
       </div>
-      <div className="flex items-center justify-between border-t border-slate-100 bg-blue-50/40 px-5 py-3 text-[0.6875rem] font-medium text-blue-700">
-        <span>{capability.footer}</span>
-        <Icon className="h-3.5 w-3.5" path={capability.footerIcon} />
-      </div>
+      <h3 className="mb-1.5 text-sm font-bold text-slate-900">{module.title}</h3>
+      <p className="text-xs leading-relaxed text-slate-500">{module.description}</p>
     </article>
   );
 }
 
 export default function Landing() {
+  useEffect(() => {
+    document.documentElement.classList.add("scrollbar-hidden");
+    return () => document.documentElement.classList.remove("scrollbar-hidden");
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#f5f7ff] font-sans text-slate-900 selection:bg-blue-100 selection:text-blue-900">
-      <Navbar />
+      <Navbar links={navLinks} />
       <main id="inicio">
-        <section className="mx-auto max-w-7xl px-5 pb-12 pt-10 sm:px-6 lg:px-10 lg:pb-14 lg:pt-14">
-          <h1 className="mb-4 max-w-4xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-4xl lg:text-[2.625rem]">
-            Gestión inteligente del capital humano, turnos y descansos en tiempo
-            real
-          </h1>
-          <p className="mb-6 max-w-5xl text-sm leading-relaxed text-slate-600 sm:text-base">
-            Optimice la asignación de francos, vacaciones y horarios de sus empleados, 
-            con estricto cumplimiento de las reglas de negocio de su empresa, y centralice 
-            los recibos de sueldo en un solo lugar.
-          </p>
-          <div className="mb-6 flex flex-wrap items-center gap-3">
+        <section className="relative overflow-hidden bg-[#223247] text-white">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:2.5rem_2.5rem]"
+          />
+          <div className="relative mx-auto max-w-7xl px-5 pb-28 pt-14 text-center sm:px-6 lg:px-10 lg:pb-32 lg:pt-20">
+            <p className="mb-4 text-[0.6875rem] font-bold uppercase tracking-[0.2em] text-blue-200">
+              Gestión de Recursos Humanos
+            </p>
+            <h1 className="mx-auto mb-5 max-w-4xl text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
+              La administración del personal que su empresa necesita para
+              crecer con orden
+            </h1>
+            <p className="mx-auto mb-8 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
+              Horarios, francos, vacaciones, fichajes y sueldos bajo las mismas
+              reglas, con información separada por empresa y acceso según el
+              rol de cada persona.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <a
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-600"
+                href="/price"
+              >
+                Solicitar una demostración
+                <i aria-hidden="true" className="fa-solid fa-arrow-right text-xs" />
+              </a>
+              <a
+                className="inline-flex items-center justify-center rounded-lg border border-white/25 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                href="#modulos"
+              >
+                Ver módulos
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section aria-label="HRManager en números" className="relative mx-auto -mt-16 max-w-6xl px-5 sm:px-6 lg:px-10">
+          <dl className="grid grid-cols-1 divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-white shadow-lg sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
+            {facts.map((fact) => (
+              <div className="p-6 text-center" key={fact.label}>
+                <dt className="text-xs font-semibold text-slate-700">{fact.label}</dt>
+                <dd className="mt-1 text-3xl font-extrabold tracking-tight text-blue-800">{fact.value}</dd>
+                <dd className="mt-1 text-[0.6875rem] text-slate-500">{fact.detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section
+          aria-labelledby="modulos-titulo"
+          className="mx-auto max-w-7xl scroll-mt-16 px-5 py-16 sm:px-6 lg:px-10 lg:py-20"
+          id="modulos"
+        >
+          <div className="mx-auto mb-10 max-w-2xl text-center">
+            <p className="mb-1 text-[0.625rem] font-bold uppercase tracking-wider text-blue-700">
+              Módulos
+            </p>
+            <h2 className="mb-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl" id="modulos-titulo">
+              Una plataforma, todas las áreas de gestión laboral
+            </h2>
+            <p className="text-sm text-slate-600">
+              Empiece con lo esencial y sume módulos a medida que su
+              organización lo requiera.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {modules.map((module) => (
+              <ModuleCard key={module.title} module={module} />
+            ))}
             <a
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+              className="flex flex-col items-start justify-between rounded-xl bg-blue-700 p-5 text-white transition-colors hover:bg-blue-800"
               href="/price"
             >
-              Ver planes y precios
-              <Icon path="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </a>
-            <a
-              className="inline-flex items-center justify-center gap-2.5 rounded-lg border border-transparent px-5 py-3 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
-              href="#casos"
-            >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
-                <svg
-                  aria-hidden="true"
-                  className="ml-0.5 h-2.5 w-2.5 fill-current"
-                  viewBox="0 0 24 24"
-                >
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-              </span>
-              Ver casos de éxito
-            </a>
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="capabilities-title"
-          className="mx-auto mb-12 max-w-7xl px-5 sm:px-6 lg:px-10"
-          id="capacidades"
-        >
-          <div className="rounded-2xl border border-blue-100 bg-[#edf4ff] p-5 sm:p-7 lg:p-9">
-            <div className="mb-6 max-w-3xl">
-              <p className="mb-1 text-[0.625rem] font-bold uppercase tracking-wider text-blue-700">
-                Capacidades de vanguardia
-              </p>
-              <h2
-                className="mb-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl"
-                id="capabilities-title"
-              >
-                Arquitectura para equipos de RRHH con alta complejidad operativa
-              </h2>
-              <p className="text-sm text-slate-600">
-                Reemplace las planillas manuales por una plataforma que coordina
-                procesos, normas sindicales y gestión laboral.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {capabilities.map((capability) => (
-                <CapabilityCard capability={capability} key={capability.title} />
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section
-          aria-label="Caso de éxito"
-          className="mx-auto mb-12 max-w-7xl scroll-mt-16 px-5 sm:px-6 lg:px-10"
-          id="casos"
-        >
-          <article
-            className="grid overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm lg:grid-cols-12"
-            id="sobre-nosotros"
-          >
-            <div className="min-h-64 lg:col-span-4 lg:min-h-[24.375rem]">
-              <img
-                alt="Valeria Rossi, gerente de Recursos Humanos"
-                className="h-full max-h-[26.25rem] min-h-64 w-full object-cover object-top lg:max-h-none"
-                src={valeriaRossi}
-              />
-            </div>
-            <div className="flex flex-col justify-between gap-7 p-6 sm:p-8 lg:col-span-8 lg:p-10">
-              <div>
-                <span className="mb-5 flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 font-serif text-2xl font-bold text-blue-700">
-                  “
+              <i aria-hidden="true" className="fa-solid fa-layer-group text-xl text-blue-200" />
+              <span>
+                <span className="mb-1 block text-sm font-bold">Compare los planes</span>
+                <span className="block text-xs text-blue-100">
+                  Vea qué módulos incluye cada uno
+                  <i aria-hidden="true" className="fa-solid fa-arrow-right ml-2 text-[0.625rem]" />
                 </span>
-                <blockquote className="max-w-3xl text-base font-medium leading-relaxed text-slate-800 sm:text-lg">
-                  “Con más de 1.200 colaboradores en tres plantas productivas,
-                  gestionar turnos y descansos era una pesadilla. HRManager
-                  transformó nuestra operación: automatizamos el control de
-                  horas extras y eliminamos los errores de cálculo de CCT.”
-                </blockquote>
-              </div>
-              <div className="flex flex-col gap-4 border-t border-slate-100 pt-5 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">
-                    Valeria Rossi
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Gerente de Recursos Humanos · Acme Corp LatAm
-                  </p>
-                </div>
-                <div
-                  aria-label="Calificación: 5 de 5 estrellas"
-                  className="flex items-center gap-1 text-blue-600"
-                >
-                  {Array.from({ length: 5 }, (_, index) => (
-                    <svg
-                      aria-hidden="true"
-                      className="h-4 w-4 fill-current"
-                      key={index}
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-              </div>
+              </span>
+            </a>
+          </div>
+        </section>
+
+        <section aria-labelledby="pasos-titulo" className="border-y border-blue-100 bg-[#edf4ff]">
+          <div className="mx-auto max-w-7xl px-5 py-16 sm:px-6 lg:px-10">
+            <div className="mb-10 max-w-2xl">
+              <p className="mb-1 text-[0.625rem] font-bold uppercase tracking-wider text-blue-700">
+                Implementación
+              </p>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl" id="pasos-titulo">
+                Operativo en tres pasos
+              </h2>
             </div>
-          </article>
+            <ol className="grid gap-6 md:grid-cols-3">
+              {steps.map((step, index) => (
+                <li className="relative rounded-xl border border-blue-100 bg-white p-6" key={step.title}>
+                  <span className="mb-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#223247] text-sm font-bold text-white">
+                    {index + 1}
+                  </span>
+                  <h3 className="mb-1.5 text-sm font-bold text-slate-900">{step.title}</h3>
+                  <p className="text-xs leading-relaxed text-slate-600">{step.description}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section aria-label="Caso de éxito" className="mx-auto max-w-7xl px-5 py-14 sm:px-6 lg:px-10">
+          <figure className="grid items-center gap-8 md:grid-cols-[auto_1fr]">
+            <img
+              alt="Valeria Rossi, gerente de Recursos Humanos"
+              className="h-40 w-40 rounded-2xl object-cover object-top shadow-sm"
+              src="https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/images/reseniaValeria.png"
+            />
+            <div className="border-l-4 border-blue-700 pl-6">
+              <blockquote className="mb-4 text-base font-medium leading-relaxed text-slate-800 sm:text-lg">
+                “HRManager transformó nuestra operación: automatizamos el
+                control de horas extras y eliminamos los errores de cálculo
+                de CCT.”
+              </blockquote>
+              <figcaption className="text-sm">
+                <span className="font-bold text-slate-900">Valeria Rossi</span>
+                <span className="text-slate-500"> · Gerente de Recursos Humanos, Acme Corp LatAm</span>
+              </figcaption>
+            </div>
+          </figure>
         </section>
 
         <PricingRedirectCard />

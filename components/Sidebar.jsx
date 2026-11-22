@@ -70,7 +70,7 @@ const navigationItems = [
   },
   {
     label: "Configuración",
-    admin: "/admin/configuracion",
+    admin: "/admin/configuration",
     employer: "/employer/configuration",
     employee: "/employee/configuration",
     aliases: ["/configuracion"],

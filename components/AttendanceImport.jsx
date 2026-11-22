@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useExclusiveOverlay } from "../lib/overlays";
 import { readSheet } from "read-excel-file/browser";
 import writeExcelFile from "write-excel-file/browser";
 import { employeeDirectory } from "../data/employeeDirectory";
@@ -157,6 +158,8 @@ export default function AttendanceImport({ onClose, onImported }) {
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState(null);
+  // Si se abre otra ventana (por ejemplo, las notificaciones), esta se cierra
+  useExclusiveOverlay(true, () => !importing && onClose());
 
   useEffect(() => {
     const onKey = (event) => event.key === "Escape" && !importing && onClose();

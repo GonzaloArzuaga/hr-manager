@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { CheckIcon } from "../../components/icons";
 import {
   adminCreateCompany,
   adminListCompanies,
@@ -87,7 +88,7 @@ function CredentialsNotice({ credentials, onClose }) {
   );
 }
 
-export default function AdminEmpresas() {
+export default function EmpresasAdmin() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
@@ -262,20 +263,6 @@ export default function AdminEmpresas() {
             <h1 className="page-title">Empresas</h1>
           </header>
 
-          <section aria-label="Resumen" className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <MetricCard
-              note={`${companies.length - activeCount} suspendidas`}
-              title="Empresas activas"
-              value={activeCount}
-            />
-            <MetricCard note="En todas las empresas activas" title="Empleados activos" value={employeesTotal} />
-            <MetricCard
-              note="Empleadores que todavía no cambiaron la contraseña provisoria"
-              title="Pendientes de primer ingreso"
-              value={pendingFirstLogin}
-            />
-          </section>
-
           <section className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
             <div className="mb-3 border-b border-slate-100 pb-2.5">
               <h2 className="text-sm font-bold tracking-tight text-slate-900">Dar de alta una empresa</h2>
@@ -344,13 +331,25 @@ export default function AdminEmpresas() {
                   disabled={saving}
                   type="submit"
                 >
-                  <Icon className="h-3 w-3">
-                    <path d="M12 4v16m8-8H4" />
-                  </Icon>
+                  <CheckIcon />
                   {saving ? "Creando..." : "Crear empresa"}
                 </button>
               </div>
             </form>
+          </section>
+
+          <section aria-label="Resumen" className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <MetricCard
+              note={`${companies.length - activeCount} suspendidas`}
+              title="Empresas activas"
+              value={activeCount}
+            />
+            <MetricCard note="En todas las empresas activas" title="Empleados activos" value={employeesTotal} />
+            <MetricCard
+              note="Empleadores que todavía no cambiaron la contraseña provisoria"
+              title="Pendientes de primer ingreso"
+              value={pendingFirstLogin}
+            />
           </section>
 
           <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm">

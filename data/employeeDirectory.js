@@ -28,3 +28,12 @@ export function sortByEmployeeDirectory(items) {
     )
     .map(({ item }) => item);
 }
+
+// Texto único para elegir un empleado en cualquier desplegable: "Nombre — CUIL ..."
+// (el desplegable muestra el CUIL en una segunda línea, más chico).
+export function employeeOptionLabel(employee) {
+  const entry =
+    employeeDirectory.find((item) => item.id === String(employee.id) || (employee.dbId && item.dbId === employee.dbId)) ?? employee;
+  const cuil = employee.cuil || entry.cuil;
+  return cuil ? `${employee.name ?? entry.name} — CUIL ${cuil}` : employee.name ?? entry.name;
+}

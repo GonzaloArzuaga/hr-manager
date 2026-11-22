@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { DataTableToolbar, TableSearchInput } from "../../components/DataTableToolbar";
 import PaginationControls from "../../components/PaginationControls";
 // import WeeklyHoursCard from "../../components/cards/empleado/WeeklyHoursCard";
 // import WorkdayTypeCard from "../../components/cards/empleado/WorkdayTypeCard";
@@ -11,8 +12,23 @@ import Select from "../../components/Select";
 
 const weekdayLabels = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
 
+// Días de la semana que tienen vacaciones o franco aprobado
+function justifiedDaysOf(entry) {
+  if (!entry.weekStartDate || entry.employeeId === undefined) return [];
+  const [year, month, day] = entry.weekStartDate.split("-").map(Number);
+  return Array.from({ length: 7 }, (_, offset) => new Date(year, month - 1, day + offset))
+    .map((date) => getDayAssignment(date, entry.employeeId).type)
+    .filter((type) => type === "vacation" || type === "franco");
+}
+
 function getAttendance(entry) {
-  if (!entry.clockIn) return { status: "Ausente" };
+  if (!entry.clockIn) {
+    // Con vacaciones en esa semana no se cuenta como ausencia
+    const justified = justifiedDaysOf(entry);
+    if (justified.includes("vacation")) return { status: "Vacaciones" };
+    if (justified.length === 7) return { status: "Franco" };
+    return { status: "Ausente" };
+  }
 
   const [scheduledHours, scheduledMinutes] = entry.scheduledStart
     .split(":")
@@ -284,11 +300,6 @@ export default function HorariosEmployee() {
     totalPages,
   } = usePagination(filteredHistory, pageSize);
 
-  function showDemoNotice() {
-    setHistorySearch("");
-    setNotice("Se limpió el filtro del historial.");
-  }
-
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-slate-900 antialiased">
       <main className="min-w-0 flex-1 px-4 py-4 md:px-5">
@@ -437,10 +448,11 @@ export default function HorariosEmployee() {
               </button>
             </nav>
 
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-4 2xl:grid-cols-7">
+            {/* Vista semanal: los 7 días uno al lado del otro. En pantallas chicas la fila se desplaza de costado. */}
+            <div className="flex snap-x gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-7 md:overflow-visible md:pb-0" data-testid="week-row">
               {displayedDays.map((day) => (
                 <article
-                  className={`flex min-h-[7.875rem] flex-col rounded-xl border p-3.5 shadow-sm ${day.cardClass}`}
+                  className={`flex min-h-[7.875rem] min-w-[9.5rem] snap-start flex-col rounded-xl border p-2.5 shadow-sm md:min-w-0 ${day.cardClass}`}
                   key={day.dateValue}
                 >
                   <div>
@@ -456,7 +468,7 @@ export default function HorariosEmployee() {
                       }`}
                     >
                       <h3
-                        className={`text-xs font-bold ${
+                        className={`text-[0.6875rem] font-bold ${
                           day.isToday ? "text-blue-900" : "text-slate-800"
                         }`}
                       >
@@ -535,37 +547,17 @@ export default function HorariosEmployee() {
 
           <section
             aria-labelledby="history-heading"
-            className="rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-sm"
+            className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm"
           >
-            <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-sm font-bold tracking-tight text-slate-900" id="history-heading">
-                  Horarios Semanales
-                </h2>
-              </div>
-              <div className="flex w-full items-center gap-2 md:w-auto">
-                <label className="relative min-w-0 flex-1">
-                  <span className="sr-only">Buscar por mes o semana</span>
-                  <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" path="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  <input
-                    className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2 pl-9 pr-3 text-[0.5625rem] font-medium text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    onChange={(event) => setHistorySearch(event.target.value)}
-                    placeholder="Filtrar por mes o semana..."
-                    type="search"
-                    value={historySearch}
-                  />
-                </label>
-                <button
-                  className="inline-flex shrink-0 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[0.5625rem] font-bold text-slate-700 shadow-sm hover:bg-slate-50"
-                  onClick={() => showDemoNotice("Filtros de historial")}
-                  type="button"
-                >
-                  <Icon className="mr-1.5 h-4 w-4 text-slate-500" path="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  Filtros
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 overflow-x-auto">
+            <DataTableToolbar title="Horarios Semanales" titleId="history-heading">
+              <TableSearchInput
+                ariaLabel="Buscar por mes o semana"
+                onChange={(event) => setHistorySearch(event.target.value)}
+                placeholder="Filtrar por mes o semana..."
+                value={historySearch}
+              />
+            </DataTableToolbar>
+            <div className="overflow-x-auto">
               <table
                 className="hr-data-table hr-data-table--standard w-full min-w-[37.5rem]"
                 id="history-table"
@@ -600,6 +592,8 @@ export default function HorariosEmployee() {
                                 ? "border-emerald-300 bg-emerald-100 text-emerald-900"
                                 : attendance.status === "Ausente"
                                   ? "border-red-300 bg-red-100 text-red-900"
+                                  : attendance.status === "Vacaciones" || attendance.status === "Franco"
+                                    ? "border-violet-200 bg-violet-50 text-violet-800"
                                   : "border-amber-300 bg-amber-100 text-amber-900"
                             }`}
                           >

@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { employeeOptionLabel } from "../../data/employeeDirectory";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import PaginationControls from "../../components/PaginationControls";
 import EmployeeIdentity from "../../components/EmployeeIdentity";
@@ -139,11 +141,9 @@ function ScheduleTable({ onDelete, schedules }) {
                 <td className="employee-identity-cell px-5 py-3.5">
                   <EmployeeIdentity
                     avatarStyle={employee.avatarStyle}
+                    employeeId={employee.id}
                     department={employee.department}
                     name={employee.name}
-                    nameClassName="text-[0.625rem] leading-snug"
-                    size="lg"
-                    metadataClassName="text-[0.5625rem] font-normal"
                   />
                 </td>
                 <td className="px-5 py-3.5">
@@ -392,13 +392,6 @@ export default function HorariosEmployer() {
     }
   }
 
-  function resetSchedules() {
-    setSchedules([...horariosData.schedules]);
-    setSearch("");
-    setSelectedWeekKey(assignableWeeks[0].key);
-    clearForm();
-  }
-
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans antialiased text-slate-800">
       <main className="min-w-0 flex-1 px-4 py-4 md:px-5">
@@ -483,7 +476,7 @@ export default function HorariosEmployer() {
                       <option value="">Seleccionar empleado...</option>
                       {assignableEmployees.map((employee) => (
                         <option key={employee.id} value={employee.id}>
-                          {employee.name} (Leg. #{employee.id})
+                          {employeeOptionLabel(employee)}
                         </option>
                       ))}
                     </SelectField>
@@ -558,7 +551,7 @@ export default function HorariosEmployer() {
                     disabled={saving}
                     type="submit"
                   >
-                    <Icon className="text-xs" name="solid fa-circle-plus" />
+                    <CheckIcon />
                     <span>Asignar horario</span>
                   </button>
                 </div>
@@ -582,7 +575,6 @@ export default function HorariosEmployer() {
           >
             <ScheduleSummaryCard
               detail={`de ${activeEmployees.length} activos`}
-              icon="regular fa-id-badge"
               label="Empleados asignados"
               note={`${pendingEmployeeCount} pendientes para esta semana`}
               noteIcon="solid fa-folder-open"
@@ -641,24 +633,6 @@ export default function HorariosEmployer() {
                     value={search}
                   />
                 </div>
-                <button
-                  aria-label="Restablecer horarios"
-                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
-                  onClick={resetSchedules}
-                  title="Restablecer horarios"
-                  type="button"
-                >
-                  <Icon className="text-xs" name="solid fa-rotate-right" />
-                </button>
-                <button
-                  aria-label="Limpiar filtro"
-                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
-                  onClick={() => setSearch("")}
-                  title="Limpiar filtro"
-                  type="button"
-                >
-                  <Icon className="text-xs" name="solid fa-sliders" />
-                </button>
               </div>
             </div>
             {view === "list" ? (

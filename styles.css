@@ -19,6 +19,16 @@ html {
   }
 }
 
+/* Páginas que ocultan la barra de desplazamiento sin impedir el scroll */
+html.scrollbar-hidden {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+
+html.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 ::-webkit-scrollbar-track {
   background-color: #f5f7ff;
 }
@@ -37,78 +47,59 @@ html {
   line-height: 1.25;
 }
 
+/* Tablas: un solo formato en todos los módulos (empleador, empleado y administrador).
+   Texto alineado a la izquierda, encabezado celeste en mayúsculas y sin cortes de línea,
+   mismo relleno de celdas y separadores. text-center / text-right siguen funcionando. */
 .hr-data-table {
   border-collapse: collapse;
   color: #334155;
   font-size: 0.625rem;
   line-height: 1.5;
-}
-
-.hr-data-table--standard {
   text-align: left;
-}
-
-.hr-data-table.hr-data-table--standard th,
-.hr-data-table.hr-data-table--standard td {
-  padding: 0.625rem 0.75rem;
-  text-align: inherit;
-  vertical-align: middle;
-}
-
-.hr-data-table.hr-data-table--standard thead tr {
-  border-bottom: 1px solid #e2e8f0;
-  background-color: #f0f4ff;
-  color: #475569;
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.hr-data-table--standard th.text-center,
-.hr-data-table--standard td.text-center {
-  text-align: center;
-}
-
-.hr-data-table--standard th.text-right,
-.hr-data-table--standard td.text-right {
-  text-align: right;
-}
-
-.hr-data-table--standard th.text-left,
-.hr-data-table--standard td.text-left {
-  text-align: left;
-}
-
-.hr-data-table--standard tbody tr:not(:last-child) {
-  border-bottom: 1px solid #f1f5f9;
 }
 
 .hr-data-table th,
 .hr-data-table td {
   padding: 0.625rem 0.75rem;
-  text-align: center;
+  text-align: inherit;
   vertical-align: middle;
-}
-
-.hr-data-table td.employee-identity-cell {
-  padding-right: 5px;
-  padding-left: 5px;
-  text-align: left;
 }
 
 .hr-data-table thead tr {
   border-bottom: 1px solid #e2e8f0;
-  background-color: #f1f5f9;
+  background-color: #f0f4ff;
+}
+
+.hr-data-table thead th {
+  background-color: transparent;
   color: #475569;
   font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hr-data-table tbody td {
+  font-size: 0.625rem;
+}
+
+.hr-data-table th.text-center,
+.hr-data-table td.text-center {
+  text-align: center;
+}
+
+.hr-data-table th.text-right,
+.hr-data-table td.text-right {
+  text-align: right;
 }
 
 .hr-data-table tbody tr:not(:last-child) {
   border-bottom: 1px solid #f1f5f9;
+}
+
+.hr-data-table tbody tr:hover {
+  background-color: #f8fafc;
 }
 
 .hr-data-table--comparison thead th:nth-child(3) {
@@ -122,16 +113,6 @@ html {
   padding: 0.5rem 0.75rem !important;
   color: #475569 !important;
   font-size: 0.5rem !important;
-}
-
-/* Barra de progreso al cambiar de sección */
-@keyframes shell-progress {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(300%);
-  }
 }
 
 /* Las tablas anchas se desplazan dentro de su tarjeta en pantallas chicas */
@@ -163,4 +144,34 @@ html {
 
 .hr-data-table:not(.hr-data-table--comparison) tbody td :where(.rounded-full, .rounded-md.border):not(input, select, textarea) {
   font-size: 0.5625rem !important;
+}
+
+/* Campos: todos los inputs, desplegables y selectores de fecha y hora del sistema tienen
+   el mismo alto, en todas las pantallas. El texto queda centrado verticalmente. */
+:root {
+  --field-height: 2rem;
+}
+.hr-field,
+input:not(.hr-field-inner):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not([type="color"]),
+select,
+button[role="combobox"] {
+  height: var(--field-height);
+  min-height: var(--field-height);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.hr-field-inner {
+  height: 1.4em;
+}
+
+/* Pantalla de carga: brillo que recorre los bloques grises */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 37%, #e2e8f0 63%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
 }

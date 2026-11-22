@@ -10,11 +10,10 @@ export default function ScheduleSummaryCard({
   detail,
   note,
   noteTone,
-  icon,
   noteIcon,
 }) {
   return (
-    <article className="flex items-start justify-between rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
+    <article className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
       <div className="space-y-1">
         <span className="text-[0.5625rem] font-bold uppercase tracking-wider text-slate-500">
           {label}
@@ -27,9 +26,6 @@ export default function ScheduleSummaryCard({
           <Icon className="mr-1 text-xs" name={noteIcon} />
           <span>{note}</span>
         </div>
-      </div>
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-        <Icon className="text-lg" name={icon} />
       </div>
     </article>
   );

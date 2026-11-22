@@ -1323,6 +1323,25 @@ BEGIN
   END IF;
 
   v_date := p_clock_in::DATE;
+
+  -- Con vacaciones o franco aprobados ese día el empleado no fue a trabajar
+  IF EXISTS (
+       SELECT 1 FROM public.vacation_requests v
+        WHERE v.employee_id = p_employee_id
+          AND v.status = 'approved'
+          AND v_date BETWEEN v.start_date AND v.end_date) THEN
+    RAISE EXCEPTION 'El empleado está de vacaciones el %: no se le puede registrar un fichaje', to_char(v_date, 'DD/MM/YYYY');
+  END IF;
+  IF EXISTS (
+       SELECT 1
+         FROM public.days_off_request_dates d
+         JOIN public.days_off_requests r ON r.id = d.request_id
+        WHERE r.employee_id = p_employee_id
+          AND r.status = 'approved'
+          AND d.requested_date = v_date) THEN
+    RAISE EXCEPTION 'El empleado tiene franco el %: no se le puede registrar un fichaje', to_char(v_date, 'DD/MM/YYYY');
+  END IF;
+
   SELECT * INTO v_sched FROM public.work_schedules
    WHERE company_id = v_acc.company_id
      AND employee_id = p_employee_id
@@ -2410,9 +2429,17 @@ BEGIN
 END;
 $$;
 
--- Seguimiento del administrador: estado, notas y empresa creada a partir de la solicitud
+-- Seguimiento del administrador: contacto, estado, plan y empresa vinculada
+DROP FUNCTION IF EXISTS public.admin_update_demo_request(BIGINT, TEXT, TEXT, BIGINT);
 CREATE OR REPLACE FUNCTION public.admin_update_demo_request(
-  p_id BIGINT, p_status TEXT, p_admin_notes TEXT DEFAULT NULL, p_company_id BIGINT DEFAULT NULL
+  p_id BIGINT,
+  p_status TEXT,
+  p_admin_notes TEXT DEFAULT NULL,
+  p_company_id BIGINT DEFAULT NULL,
+  p_email TEXT DEFAULT NULL,
+  p_contact_name TEXT DEFAULT NULL,
+  p_company_name TEXT DEFAULT NULL,
+  p_plan_code TEXT DEFAULT NULL
 )
 RETURNS public.demo_requests
 LANGUAGE plpgsql SECURITY DEFINER
@@ -2420,17 +2447,41 @@ SET search_path = ''
 AS $$
 DECLARE
   v_row public.demo_requests;
+  v_email TEXT;
+  v_plan TEXT;
 BEGIN
   IF NOT private.is_system_admin() THEN
     RAISE EXCEPTION 'Solo el administrador del sistema puede gestionar las solicitudes';
   END IF;
-  IF p_status NOT IN ('pending', 'contacted', 'converted', 'discarded') THEN
+  IF p_status IS NULL OR p_status NOT IN ('pending', 'contacted', 'converted', 'discarded') THEN
     RAISE EXCEPTION 'Estado no válido';
+  END IF;
+  IF p_email IS NOT NULL THEN
+    v_email := lower(btrim(p_email));
+    IF v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' OR char_length(v_email) > 254 THEN
+      RAISE EXCEPTION 'Ingresá un correo electrónico válido';
+    END IF;
+  END IF;
+  IF p_contact_name IS NOT NULL AND char_length(btrim(p_contact_name)) > 120 THEN
+    RAISE EXCEPTION 'El nombre del empleador no puede superar los 120 caracteres';
+  END IF;
+  IF p_company_name IS NOT NULL AND char_length(btrim(p_company_name)) > 160 THEN
+    RAISE EXCEPTION 'La razón social no puede superar los 160 caracteres';
+  END IF;
+  IF p_plan_code IS NOT NULL THEN
+    v_plan := NULLIF(btrim(p_plan_code), '');
+    IF v_plan IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.plans WHERE code = v_plan) THEN
+      RAISE EXCEPTION 'El plan seleccionado no existe';
+    END IF;
   END IF;
   UPDATE public.demo_requests
      SET status = p_status,
-         admin_notes = COALESCE(left(p_admin_notes, 1000), admin_notes),
-         company_id = COALESCE(p_company_id, company_id)
+         admin_notes = CASE WHEN p_admin_notes IS NULL THEN admin_notes ELSE left(p_admin_notes, 1000) END,
+         company_id = COALESCE(p_company_id, company_id),
+         email = CASE WHEN p_email IS NULL THEN email ELSE v_email END,
+         contact_name = CASE WHEN p_contact_name IS NULL THEN contact_name ELSE NULLIF(btrim(p_contact_name), '') END,
+         company_name = CASE WHEN p_company_name IS NULL THEN company_name ELSE NULLIF(btrim(p_company_name), '') END,
+         plan_code = CASE WHEN p_plan_code IS NULL THEN plan_code ELSE v_plan END
    WHERE id = p_id
   RETURNING * INTO v_row;
   IF v_row.id IS NULL THEN
@@ -2442,8 +2493,171 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.request_demo(TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.request_demo(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.admin_update_demo_request(BIGINT, TEXT, TEXT, BIGINT) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.admin_update_demo_request(BIGINT, TEXT, TEXT, BIGINT) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.admin_update_demo_request(BIGINT, TEXT, TEXT, BIGINT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_update_demo_request(BIGINT, TEXT, TEXT, BIGINT, TEXT, TEXT, TEXT, TEXT) TO authenticated;
 
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC, anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private TO authenticated;
+
+-- ==========================================================================
+-- 13. Versión 2: características de los planes (ver actualizacion_v2_planes.sql)
+-- ==========================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'plans' AND column_name = 'features') THEN
+    ALTER TABLE public.plans ADD COLUMN features JSONB NOT NULL DEFAULT '[]'::JSONB;
+    ALTER TABLE public.plans ADD COLUMN highlighted BOOLEAN NOT NULL DEFAULT FALSE;
+    -- Valores iniciales: los que la página de Precios tenía escritos en el código
+    UPDATE public.plans SET features = '[{"label": "Soporte técnico básico", "included": true}]'::JSONB
+     WHERE code = 'operativo';
+    UPDATE public.plans SET features = '[{"label": "Soporte prioritario técnico 24/7", "included": true}]'::JSONB,
+           highlighted = TRUE
+     WHERE code = 'profesional';
+    UPDATE public.plans SET features = '[{"label": "Soporte prioritario técnico 24/7", "included": true},
+                                         {"label": "Cláusula de blindaje y consultoría jurídica directa", "included": true}]'::JSONB
+     WHERE code = 'a_medida';
+  END IF;
+END;
+$$;
+
+ALTER TABLE public.plans DROP CONSTRAINT IF EXISTS plans_features_array;
+ALTER TABLE public.plans ADD CONSTRAINT plans_features_array CHECK (jsonb_typeof(features) = 'array');
+
+-- Edición de planes: ahora también características y plan destacado
+DROP FUNCTION IF EXISTS public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER, TEXT[]);
+CREATE OR REPLACE FUNCTION public.admin_update_plan(
+  p_code TEXT, p_name TEXT, p_description TEXT, p_monthly_price NUMERIC, p_max_employees INTEGER,
+  p_modules TEXT[] DEFAULT NULL, p_features JSONB DEFAULT NULL, p_highlighted BOOLEAN DEFAULT NULL
+)
+RETURNS public.plans
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_plan public.plans;
+  v_item JSONB;
+  v_features JSONB := '[]'::JSONB;
+BEGIN
+  IF NOT private.is_system_admin() THEN
+    RAISE EXCEPTION 'Solo el administrador del sistema puede editar los planes';
+  END IF;
+  IF btrim(COALESCE(p_name, '')) = '' THEN
+    RAISE EXCEPTION 'El plan necesita un nombre';
+  END IF;
+  IF p_monthly_price IS NOT NULL AND p_monthly_price < 0 THEN
+    RAISE EXCEPTION 'El precio no puede ser negativo';
+  END IF;
+  IF p_max_employees IS NOT NULL AND p_max_employees < 1 THEN
+    RAISE EXCEPTION 'El máximo de empleados tiene que ser al menos 1';
+  END IF;
+  IF p_modules IS NOT NULL AND NOT (p_modules <@ ARRAY['fichajes', 'sueldos', 'estadisticas']::TEXT[]) THEN
+    RAISE EXCEPTION 'Hay un módulo que no existe';
+  END IF;
+  IF p_features IS NOT NULL THEN
+    IF jsonb_typeof(p_features) <> 'array' OR jsonb_array_length(p_features) > 12 THEN
+      RAISE EXCEPTION 'Las características tienen que ser una lista de hasta 12 elementos';
+    END IF;
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_features) LOOP
+      IF btrim(COALESCE(v_item->>'label', '')) = '' THEN
+        CONTINUE;  -- las filas vacías se descartan
+      END IF;
+      IF char_length(btrim(v_item->>'label')) > 120 THEN
+        RAISE EXCEPTION 'Cada característica puede tener hasta 120 caracteres';
+      END IF;
+      v_features := v_features || jsonb_build_array(jsonb_build_object(
+        'label', btrim(v_item->>'label'),
+        'included', COALESCE((v_item->>'included')::BOOLEAN, TRUE)));
+    END LOOP;
+  END IF;
+  UPDATE public.plans
+     SET name = btrim(p_name), description = NULLIF(btrim(COALESCE(p_description, '')), ''),
+         monthly_price = p_monthly_price, max_employees = p_max_employees,
+         modules = COALESCE(p_modules, modules),
+         features = CASE WHEN p_features IS NULL THEN features ELSE v_features END,
+         highlighted = COALESCE(p_highlighted, highlighted)
+   WHERE code = p_code
+  RETURNING * INTO v_plan;
+  IF v_plan.code IS NULL THEN
+    RAISE EXCEPTION 'El plan no existe';
+  END IF;
+  RETURN v_plan;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER, TEXT[], JSONB, BOOLEAN) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_update_plan(TEXT, TEXT, TEXT, NUMERIC, INTEGER, TEXT[], JSONB, BOOLEAN) TO authenticated;
+
+-- ==========================================================================
+-- 14. Versión 2.1: fichaje propio del empleado y días justificados
+--     (ver actualizacion_v2_1.sql)
+-- ==========================================================================
+
+-- 2. Fichaje propio del empleado ---------------------------------------------
+
+ALTER TABLE public.business_rules
+  ADD COLUMN IF NOT EXISTS employee_self_clock_in BOOLEAN NOT NULL DEFAULT TRUE;
+
+COMMENT ON COLUMN public.business_rules.employee_self_clock_in IS
+  'Si es TRUE, el empleado registra su entrada y salida desde su panel. Si es FALSE, solo el empleador carga los fichajes.';
+
+-- 3. Días justificados ------------------------------------------------------
+
+-- TRUE si ese día el empleado tiene vacaciones aprobadas, franco aprobado o está de licencia
+CREATE OR REPLACE FUNCTION private.is_justified_day(p_employee_id BIGINT, p_date DATE)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+           SELECT 1 FROM public.vacation_requests v
+            WHERE v.employee_id = p_employee_id
+              AND v.status = 'approved'
+              AND p_date BETWEEN v.start_date AND v.end_date)
+      OR EXISTS (
+           SELECT 1
+             FROM public.days_off_request_dates d
+             JOIN public.days_off_requests r ON r.id = d.request_id
+            WHERE r.employee_id = p_employee_id
+              AND r.status = 'approved'
+              AND d.requested_date = p_date)
+      OR EXISTS (
+           SELECT 1 FROM public.employees e
+            WHERE e.id = p_employee_id
+              AND e.employment_status = 'on_leave');
+$$;
+
+-- Se ejecuta en cada fichaje, venga del empleado, del empleador o de la importación
+CREATE OR REPLACE FUNCTION private.check_attendance_record()
+RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_acc public.user_accounts := private.current_account();
+BEGIN
+  -- El empleado solo puede fichar si la empresa lo permite
+  IF v_acc.id IS NOT NULL AND v_acc.role = 'employee' AND NOT COALESCE(
+       (SELECT b.employee_self_clock_in FROM public.business_rules b WHERE b.company_id = NEW.company_id),
+       TRUE) THEN
+    RAISE EXCEPTION 'Tu empresa no tiene habilitado el fichaje desde el panel del empleado. Pedile al empleador que lo registre.';
+  END IF;
+
+  -- Con vacaciones, franco o licencia no se computa tardanza
+  IF NEW.status = 'late' AND private.is_justified_day(NEW.employee_id, NEW.work_date) THEN
+    NEW.status := 'present';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS attendance_records_check ON public.attendance_records;
+CREATE TRIGGER attendance_records_check
+  BEFORE INSERT OR UPDATE ON public.attendance_records
+  FOR EACH ROW EXECUTE FUNCTION private.check_attendance_record();
+
+-- Los fichajes que ya estaban cargados como tarde en un día justificado
+UPDATE public.attendance_records a
+   SET status = 'present'
+ WHERE a.status = 'late'
+   AND private.is_justified_day(a.employee_id, a.work_date);

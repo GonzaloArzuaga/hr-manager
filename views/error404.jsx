@@ -29,7 +29,7 @@ export default function Error404() {
                 <img
                   alt="Mascota desorientada buscando la página"
                   className="w-32 max-w-[8rem] select-none object-contain drop-shadow-md sm:w-40 sm:max-w-[10rem] md:w-48 md:max-w-[12rem]"
-                  src="/404.png"
+                  src="https://prbxcnrjowntijnpczoo.supabase.co/storage/v1/object/public/images/404.png"
                 />
                 <span
                   aria-hidden="true"

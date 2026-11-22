@@ -69,12 +69,6 @@ export default function AppShell({ path, loading, children }) {
           <UserAvatar className="h-8 w-8 text-[0.6875rem]" />
         </header>
 
-        {loading && (
-          <div aria-hidden="true" className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-blue-100">
-            <div className="h-full w-1/3 animate-[shell-progress_1s_ease-in-out_infinite] bg-blue-600" />
-          </div>
-        )}
-
         <div className="min-w-0 flex-1" aria-busy={loading || undefined}>
           {children}
         </div>

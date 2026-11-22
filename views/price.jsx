@@ -2,20 +2,13 @@ import React, { useEffect, useState } from "react";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import Select from "../components/Select";
-import { listPlans, requestDemo } from "../lib/api";
+import { getPublicPlans, requestDemo } from "../lib/api";
 import { planModules } from "../lib/plans";
 
-// Presentación de cada plan. Nombre, precio, límite de empleados y módulos
-// salen de la tabla plans (los edita el administrador); esto es lo visual.
-const planLooks = {
-  operativo: { icon: "domain", support: "Soporte técnico básico" },
-  profesional: { icon: "verified", popular: true, support: "Soporte prioritario técnico 24/7" },
-  a_medida: {
-    icon: "corporate",
-    support: "Soporte prioritario técnico 24/7",
-    extra: "Cláusula de blindaje y consultoría jurídica directa",
-  },
-};
+// Todo el contenido de cada plan sale de la tabla plans, que edita el administrador:
+// nombre, descripción, precio, límite de empleados, módulos, características y si se
+// destaca como "Más popular". Acá solo se decide el ícono de cada tarjeta.
+const planIcons = { operativo: "domain", profesional: "verified", a_medida: "corporate" };
 
 const moduleFeatureLabels = {
   fichajes: "Control de fichajes e importación desde Excel",
@@ -23,15 +16,15 @@ const moduleFeatureLabels = {
   estadisticas: "Estadísticas de demanda de personal",
 };
 
-function toCard(plan) {
-  const look = planLooks[plan.code] ?? { icon: "domain", support: "Soporte técnico" };
+function toCard(plan, index) {
   const custom = plan.monthly_price === null || plan.monthly_price === undefined;
   const modules = Array.isArray(plan.modules) ? plan.modules : planModules.map((module) => module.key);
+  const extra = Array.isArray(plan.features) ? plan.features : [];
   return {
     code: plan.code,
     name: plan.name,
-    icon: look.icon,
-    popular: look.popular,
+    icon: planIcons[plan.code] ?? ["domain", "verified", "corporate"][index % 3],
+    popular: Boolean(plan.highlighted),
     description: plan.description ?? "",
     price: custom ? "A Medida" : `$${Number(plan.monthly_price).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`,
     priceNote: custom ? "Cotización adaptada a nómina" : undefined,
@@ -42,66 +35,27 @@ function toCard(plan) {
       },
       { label: "Horarios, francos y vacaciones", included: true },
       ...planModules.map((module) => ({ label: moduleFeatureLabels[module.key], included: modules.includes(module.key) })),
-      { label: look.support, included: true },
-      ...(look.extra ? [{ label: look.extra, included: true }] : []),
+      ...extra.map((item) => ({ label: item.label, included: item.included !== false })),
     ],
     action: `Seleccionar Plan ${plan.name}`,
     actionIcon: "arrow",
   };
 }
 
-// Si la base no responde se muestran los planes publicados
-const fallbackPlans = [
-  {
-    code: "operativo",
-    name: "Básico",
-    icon: "domain",
-    description:
-      "Ideal para pequeñas empresas y equipos reducidos de hasta 20 colaboradores.",
-    price: "$20",
-    features: [
-      { label: "Hasta 20 empleados registrados", included: true },
-      { label: "Soporte técnico básico", included: true },
-      { label: "Motor de Reglas CCT y convenios", included: false },
-    ],
-    action: "Seleccionar Plan Básico",
-    actionIcon: "arrow",
-  },
-  {
-    code: "profesional",
-    name: "Profesional",
-    icon: "verified",
-    description:
-      "Ideal para empresas en crecimiento de hasta 100 empleados.",
-    price: "$40",
-    popular: true,
-    features: [
-      { label: "Hasta 100 empleados registrados", included: true },
-      { label: "Soporte prioritario técnico 24/7", included: true },
-    ],
-    action: "Seleccionar Plan Profesional",
-    actionIcon: "arrow",
-  },
-  {
-    code: "a_medida",
-    name: "Enterprise",
-    icon: "corporate",
-    description:
-      "Para organizaciones de +100 empleados o estructuras corporativas complejas a medida.",
-    price: "A Medida",
-    priceNote: "Cotización adaptada a nómina",
-    features: [
-      { label: "Hecho a la medida de tu Empresa", included: true },
-      { label: "Soporte prioritario técnico 24/7", included: true },
-      {
-        label: "Cláusula de blindaje y consultoría jurídica directa",
-        included: true,
-      },
-    ],
-    action: "Seleccionar Plan Enterprise",
-    actionIcon: "arrow",
-  },
-];
+function PlanSkeleton() {
+  return (
+    <article aria-hidden="true" className="flex flex-col rounded-xl border border-slate-100 bg-white p-6 shadow-sm">
+      <div className="skeleton h-4 w-28" />
+      <div className="skeleton mt-3 h-3 w-full" />
+      <div className="skeleton mt-1.5 h-3 w-3/4" />
+      <div className="skeleton mt-5 h-9 w-24" />
+      <div className="mt-6 space-y-3">
+        {[0, 1, 2, 3, 4].map((item) => <div className="skeleton h-3 w-full" key={item} />)}
+      </div>
+      <div className="skeleton mt-6 h-11 w-full" />
+    </article>
+  );
+}
 
 function Icon({ name, className = "h-5 w-5" }) {
   const paths = {
@@ -357,14 +311,18 @@ function DemoForm({ plans, selectedPlan, setSelectedPlan }) {
 }
 
 export default function Price() {
-  const [plans, setPlans] = useState(fallbackPlans);
+  const [plans, setPlans] = useState(null);
+  const [plansError, setPlansError] = useState("");
   const [selectedPlan, setSelectedPlan] = useState("profesional");
 
-  useEffect(() => {
-    listPlans()
-      .then((rows) => rows.length && setPlans(rows.map(toCard)))
-      .catch(() => {});
-  }, []);
+  // Los planes se piden apenas abre la aplicación (main.jsx), así que normalmente ya están
+  function loadPlans() {
+    setPlansError("");
+    getPublicPlans()
+      .then((rows) => setPlans(rows.map(toCard)))
+      .catch((error) => setPlansError(error.message));
+  }
+  useEffect(loadPlans, []);
 
   function selectPlan(planCode) {
     setSelectedPlan(planCode);
@@ -397,15 +355,23 @@ export default function Price() {
             </p>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 items-stretch gap-6 lg:grid-cols-3">
-            {plans.map((plan) => (
-              <PricingCard
-                key={plan.code}
-                onSelectPlan={selectPlan}
-                plan={plan}
-              />
-            ))}
+          <div aria-busy={!plans} className="mt-8 grid grid-cols-1 items-stretch gap-6 lg:grid-cols-3">
+            {plans
+              ? plans.map((plan) => (
+                  <PricingCard
+                    key={plan.code}
+                    onSelectPlan={selectPlan}
+                    plan={plan}
+                  />
+                ))
+              : !plansError && [0, 1, 2].map((item) => <PlanSkeleton key={item} />)}
           </div>
+          {plansError && (
+            <div className="mt-6 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-center text-sm text-rose-700" role="alert">
+              No pudimos cargar los planes.{" "}
+              <button className="font-semibold underline" onClick={loadPlans} type="button">Reintentar</button>
+            </div>
+          )}
 
           <div className="mt-6 flex flex-wrap items-center justify-around gap-4 rounded-xl bg-[#eff4ff] px-4 py-4 text-sm text-slate-600">
             <div className="flex items-center gap-2">
@@ -441,7 +407,7 @@ export default function Price() {
               <h3 className="mb-4 text-lg font-bold text-slate-900">
                 Agendar Demo Guiada
               </h3>
-              <DemoForm plans={plans} selectedPlan={selectedPlan} setSelectedPlan={setSelectedPlan} />
+              <DemoForm plans={plans ?? []} selectedPlan={selectedPlan} setSelectedPlan={setSelectedPlan} />
               <p className="mt-4 text-center text-xs text-slate-500">
                 Usaremos tus datos únicamente para coordinar la demostración.
               </p>

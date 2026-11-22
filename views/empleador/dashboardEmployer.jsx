@@ -1,5 +1,10 @@
 import { navigate } from "../../lib/router";
+import EmployeeIdentity from "../../components/EmployeeIdentity";
 import React, { useState } from "react";
+import MonthlyFrancosCard from "../../components/cards/empleador/MonthlyFrancosCard";
+import { empleadosData } from "../../data/empleadosData";
+import { francosData } from "../../data/francosData";
+import { getBusinessRules } from "../../data/businessRules";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import { resolveDaysOff, resolveVacation } from "../../lib/api";
 import DashboardMetricCard from "../../components/cards/empleador/DashboardMetricCard";
@@ -40,25 +45,19 @@ function RequestRow({ request, onResolve, busy }) {
 
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-transparent bg-[#f3f6ff] p-2.5 transition-colors hover:bg-[#edf2ff]">
-      <div className="flex min-w-0 items-center space-x-2.5">
-        <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-            "bg-blue-600 text-white"
-          }`}
-        >
-          {employee.initials}
-        </div>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-1.5">
-            <span className="text-[0.6875rem] font-bold text-slate-800">
-              {employee.name}
-            </span>
+      <div className="min-w-0">
+        <EmployeeIdentity
+          avatarStyle={employee.avatarStyle}
+          employeeId={employee.id}
+          initials={employee.initials}
+          name={employee.name}
+          nameExtra={
             <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[0.5625rem] font-medium text-slate-600">
               {request.type}
             </span>
-          </div>
-          <p className="mt-0.5 text-[0.5625rem] text-slate-500">{request.date}</p>
-        </div>
+          }
+        />
+        <p className="mt-0.5 pl-9 text-[0.5625rem] text-slate-500">{request.date}</p>
       </div>
       <div className="flex shrink-0 items-center space-x-1">
         <button
@@ -174,6 +173,14 @@ export default function DashboardEmployer() {
               />
             ))}
           </section>
+
+          <MonthlyFrancosCard
+            compact
+            employees={empleadosData.employees}
+            href="/employer/francos"
+            requests={francosData.requests}
+            weeklyDaysOff={getBusinessRules().weeklyDaysOff}
+          />
 
           <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
             <section className="flex flex-col justify-between rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm lg:col-span-7">

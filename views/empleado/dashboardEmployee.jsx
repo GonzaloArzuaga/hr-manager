@@ -126,7 +126,14 @@ export default function DashboardEmployee() {
   const clockOutTime = formatTime(todayRecord?.clockOutAt);
   const isOnDuty = Boolean(clockInTime && !clockOutTime);
   const isDayOff = upcomingDaysOff.some((item) => item.date === today && item.status === "Aceptado");
-  const statusTitle = isDayOff
+  const isOnVacation = ownVacations.some(
+    (request) => request.status === "Aprobada" && request.startKey <= today && request.endKey >= today,
+  );
+  // El empleador decide en Configuración si el empleado puede fichar desde su panel
+  const canClock = store.rules?.employeeSelfClockIn !== false;
+  const statusTitle = isOnVacation
+    ? "Hoy estás de vacaciones"
+    : isDayOff
     ? "Hoy tenés franco"
     : isOnDuty
       ? "En Servicio Activo"
@@ -332,7 +339,7 @@ export default function DashboardEmployee() {
                     </p>
                     <p className="text-[0.625rem] font-bold">{clockInTime ? `${clockInTime} hs` : "—"}</p>
                     <p className="text-[0.5rem] font-medium text-blue-700">
-                      {todayRecord ? (todayRecord.status === "late" ? "Con demora" : "Puntual") : ""}
+                      {todayRecord && !isDayOff && !isOnVacation ? (todayRecord.status === "late" ? "Con demora" : "Puntual") : ""}
                       {clockOutTime ? ` · Salida ${clockOutTime} hs` : ""}
                     </p>
                   </div>
@@ -355,14 +362,21 @@ export default function DashboardEmployee() {
                   <p className="mb-2 text-[0.5rem] font-bold uppercase tracking-wide text-slate-400">
                     Gestión de novedades
                   </p>
-                  <button
-                    className="mb-2 w-full rounded-lg bg-[#0f3e83] px-2 py-2 text-[0.625rem] font-semibold text-white transition hover:bg-blue-900 disabled:opacity-50"
-                    disabled={clocking || Boolean(clockOutTime)}
-                    onClick={handleClock}
-                    type="button"
-                  >
-                    {clockOutTime ? "Jornada registrada" : isOnDuty ? "Registrar salida" : "Registrar entrada"}
-                  </button>
+                  {canClock ? (
+                    <button
+                      className="mb-2 w-full rounded-lg bg-[#0f3e83] px-2 py-2 text-[0.625rem] font-semibold text-white transition hover:bg-blue-900 disabled:opacity-50"
+                      data-testid="self-clock"
+                      disabled={clocking || Boolean(clockOutTime)}
+                      onClick={handleClock}
+                      type="button"
+                    >
+                      {clockOutTime ? "Jornada registrada" : isOnDuty ? "Registrar salida" : "Registrar entrada"}
+                    </button>
+                  ) : (
+                    <p className="mb-2 rounded-lg bg-slate-50 px-2 py-2 text-center text-[0.5625rem] text-slate-500" data-testid="self-clock-off">
+                      Tu entrada y salida las registra el empleador.
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <a
                       className="rounded-lg bg-blue-50 px-2 py-2 text-center text-[0.5625rem] font-semibold text-blue-800 transition hover:bg-blue-100"

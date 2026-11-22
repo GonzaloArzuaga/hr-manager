@@ -6,8 +6,11 @@ import { hydrate, loadAccount, store } from "./lib/store";
 import { currentPath, interceptLinks, navigate, usePath } from "./lib/router";
 import AppShell from "./components/AppShell";
 import FeedbackHost from "./components/FeedbackHost";
+import { PageSkeleton, PublicLoading, ShellSkeleton } from "./components/LoadingScreen";
 import { loadNotifications, stopNotifications } from "./lib/notifications";
 import { hasModule, moduleForPath } from "./lib/plans";
+import { getPublicPlans } from "./lib/api";
+import { preloadDemoVideos } from "./lib/demoVideos";
 
 // Páginas públicas: no requieren sesión
 const publicViews = {
@@ -44,16 +47,17 @@ const employeeViews = {
 };
 
 const adminViews = {
-  "/admin": () => import("./views/admin/AdminInicio"),
-  "/admin/empresas": () => import("./views/admin/AdminEmpresas"),
-  "/admin/solicitudes": () => import("./views/admin/AdminSolicitudes"),
-  "/admin/configuracion": () => import("./views/admin/AdminConfiguracion"),
+  "/admin": () => import("./views/admin/dashboardAdmin"),
+  "/admin/empresas": () => import("./views/admin/empresasAdmin"),
+  "/admin/solicitudes": () => import("./views/admin/solicitudesAdmin"),
+  "/admin/configuration": () => import("./views/participante/configuration"),
 };
 
 const viewProps = {
   "/employer/configuration": { userType: "employer" },
   "/configuracion": { userType: "employer" },
   "/employee/configuration": { userType: "employee" },
+  "/admin/configuration": { userType: "admin" },
 };
 
 // Rutas de versiones anteriores (en castellano). Siguen funcionando porque hay
@@ -66,6 +70,7 @@ const legacyExact = {
   "/cambiar-contrasena": "/login/change-temporary-password",
   "/empleador/configuracion": "/employer/configuration",
   "/empleado/configuracion": "/employee/configuration",
+  "/admin/configuracion": "/admin/configuration",
 };
 
 function legacyTarget(path) {
@@ -184,6 +189,17 @@ async function resolveRoute(path) {
   return { load: views[path], props: viewProps[path], shell: true };
 }
 
+// En las páginas públicas se piden de entrada los planes (Precios) y se prepara el
+// reproductor de la demo (Sobre nosotros), así esas pantallas no esperan al abrirse.
+function preloadPublicContent() {
+  const run = () => {
+    getPublicPlans().catch(() => {});
+    preloadDemoVideos();
+  };
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 2000 });
+  else window.setTimeout(run, 500);
+}
+
 function App() {
   const path = usePath();
   const [state, setState] = useState({ status: "loading" });
@@ -191,6 +207,10 @@ function App() {
 
   // Los enlaces internos cambian de sección sin recargar la página
   useEffect(() => interceptLinks(isKnownPath), []);
+
+  useEffect(() => {
+    if (publicViews[path]) preloadPublicContent();
+  }, [path]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,7 +264,10 @@ function App() {
     return () => data.subscription.unsubscribe();
   }, []);
 
-  if (state.status === "loading") return <FullScreenMessage title="Cargando…" />;
+  // Mientras se resuelve una pantalla del panel se muestra su forma (menú, tarjetas, tabla)
+  const goingToPanel = !publicViews[path] && isKnownPath(path) && path !== "/login/change-temporary-password";
+  if (state.status === "loading") return goingToPanel ? <ShellSkeleton path={path} /> : <PublicLoading />;
+  if (pending && goingToPanel && !(state.status === "ready" && state.shell)) return <ShellSkeleton path={path} />;
   if (state.status === "message") {
     return (
       <FullScreenMessage title={state.title}>
@@ -269,9 +292,11 @@ function App() {
   }
   const { View, props, shell } = state;
   if (!shell) return <View key={state.path} {...props} />;
+  // Al cambiar de sección dentro del panel, el menú queda y el contenido muestra la carga
+  const switching = pending && goingToPanel && path !== state.path;
   return (
-    <AppShell loading={pending} path={state.path}>
-      <View key={state.path} {...props} />
+    <AppShell loading={pending} path={switching ? path : state.path}>
+      {switching ? <PageSkeleton path={path} /> : <View key={state.path} {...props} />}
     </AppShell>
   );
 }

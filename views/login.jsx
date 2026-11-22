@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import Navbar from "../components/Navbar";
 import { signIn } from "../lib/api";
+import { navigate } from "../lib/router";
+import { loadAccount } from "../lib/store";
 
 export default function Login() {
   const [notice, setNotice] = useState("");
@@ -17,9 +19,21 @@ export default function Login() {
     setNotice("");
     try {
       await signIn(email, password);
-      // La página de login detecta la sesión y lleva al panel que corresponde
-      // (o al cambio de contraseña provisoria, si hace falta).
-      window.location.assign("/login");
+      const account = await loadAccount();
+      if (!account) {
+        setNotice("Tu usuario no tiene una cuenta asociada. Pedile al administrador del sistema o a tu empleador que revise el alta.");
+        setSubmitting(false);
+        return;
+      }
+
+      const destination = account.must_change_password
+        ? "/login/change-temporary-password"
+        : account.role === "admin"
+          ? "/admin"
+          : account.role === "employer"
+            ? "/employer"
+            : "/employee";
+      navigate(destination, { replace: true });
     } catch (error) {
       setNotice(error.message);
       setSubmitting(false);

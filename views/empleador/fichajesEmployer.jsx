@@ -1,6 +1,10 @@
 import React, { useMemo, useState } from "react";
+import { useExclusiveOverlay } from "../../lib/overlays";
+import { DateField, TimeField } from "../../components/DateTimeFields";
+import { employeeOptionLabel } from "../../data/employeeDirectory";
+import { CheckIcon, DownloadIcon, UploadIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
-import AttendanceImport from "../../components/AttendanceImport";
+import AttendanceImport, { downloadTemplate } from "../../components/AttendanceImport";
 import EmployeeIdentity from "../../components/EmployeeIdentity";
 import PaginationControls from "../../components/PaginationControls";
 import { usePagination } from "../../hooks/usePagination";
@@ -51,8 +55,16 @@ const justifiedLabels = {
   leave: "Licencia",
 };
 
+// Ese día el empleado no fue a trabajar: no se le registran fichajes (también lo valida la base)
+const dayOffMessages = {
+  franco: "Ese día el empleado tiene franco: no se le puede registrar un fichaje.",
+  vacation: "Ese día el empleado está de vacaciones: no se le puede registrar un fichaje.",
+};
+
 const inputClassName =
   "w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500";
+const invalidInputClassName =
+  "w-full rounded-lg border border-red-400 bg-red-50/60 px-2.5 py-1.5 text-[0.5625rem] focus:border-red-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500";
 const labelClassName = "mb-1 block text-[0.6875rem] font-semibold text-slate-700";
 
 const emptyForm = { employeeDbId: "", inDate: "", inTime: "", outDate: "", outTime: "", recordId: null };
@@ -80,13 +92,15 @@ function buildRow(employee, day, dateKey) {
   const end = schedule?.ends_at_snapshot?.slice(0, 5) ?? "";
   const inTime = localTime(record?.clock_in_at);
   const outTime = localTime(record?.clock_out_at);
-  const lateMinutes = record && start ? minutesOf(inTime) - minutesOf(start) : 0;
+  const lateMinutes = record && start && !justifiedLabels[type] ? minutesOf(inTime) - minutesOf(start) : 0;
 
   let state;
-  if (record) {
-    state = record.status === "late" ? "late" : "present";
-  } else if (justifiedLabels[type]) {
+  // Si ese día tiene vacaciones, licencia o franco aprobado no se evalúa la llegada:
+  // nunca queda como ausente ni como tarde, aunque haya fichado.
+  if (justifiedLabels[type]) {
     state = type;
+  } else if (record) {
+    state = record.status === "late" ? "late" : "present";
   } else if (type === "unscheduled") {
     state = "unscheduled";
   } else if (dateKey < today) {
@@ -136,6 +150,15 @@ function matchesFilter(row, filter) {
 }
 
 function EntryCell({ row }) {
+  // Fichó en un día de vacaciones, licencia o franco: se muestra la hora y el motivo, sin evaluar la llegada
+  if (row.record && justifiedLabels[row.state]) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="font-bold text-slate-900">{row.inTime} hs</span>
+        <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">{justifiedLabels[row.state]}</span>
+      </div>
+    );
+  }
   if (row.record) {
     const late = row.state === "late";
     return (
@@ -182,6 +205,7 @@ function HoursCell({ row }) {
 }
 
 function HistoryDialog({ employee, index, onClose }) {
+  useExclusiveOverlay(true, onClose);
   const records = (index.attendanceList ?? [])
     .filter((record) => record.employee_id === employee.dbId)
     .slice(0, 30);
@@ -336,6 +360,11 @@ export default function FichajeEmployer() {
 
   const formEmployee = index.employees.find((employee) => String(employee.dbId) === String(form.employeeDbId));
   const formSchedule = formEmployee && form.inDate ? index.scheduleFor(formEmployee.dbId, form.inDate) : null;
+  const formDayType = formEmployee && form.inDate ? index.dayFor(formEmployee, form.inDate).type : null;
+  const formDayOffMessage = dayOffMessages[formDayType] ?? "";
+  // Amarillo al elegir el día; rojo (con las fechas marcadas) después de intentar guardar
+  const dayOffBlocked = Boolean(formDayOffMessage) && error === formDayOffMessage;
+  const dateClassName = dayOffBlocked ? invalidInputClassName : inputClassName;
   const isToday = selectedDate === todayKey();
   const dateLabel = `${weekdayLong[parseDateKey(selectedDate).getDay()]} ${toDisplayDate(selectedDate)}`;
 
@@ -390,6 +419,10 @@ export default function FichajeEmployer() {
     }
     if (form.outTime && !form.outDate) {
       setError("Completá la fecha de salida.");
+      return;
+    }
+    if (formDayOffMessage) {
+      setError(formDayOffMessage);
       return;
     }
     setSaving(true);
@@ -449,6 +482,174 @@ export default function FichajeEmployer() {
             </nav>
             <h1 className="page-title">Registro de Asistencia y Fichajes</h1>
           </header>
+
+          <section className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm" id="fichaje-form">
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+              <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                {form.recordId ? "Corregir fichaje" : "Registrar entrada y salida"}
+              </h2>
+              <div className="flex items-center gap-3">
+                <span className="hidden text-[0.5625rem] text-slate-500 xl:inline">
+                  Llegada tarde: más de {LATE_TOLERANCE_MINUTES} minutos después del inicio del turno
+                </span>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[0.5625rem] font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => downloadTemplate().catch((templateError) => toast.error(templateError.message))}
+                  title="Planilla de ejemplo con las columnas Legajo, Fecha, Entrada y Salida"
+                  type="button"
+                >
+                  <DownloadIcon />
+                  Descargar plantilla
+                </button>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[0.5625rem] font-semibold text-emerald-800 hover:bg-emerald-100"
+                  onClick={() => setShowImport(true)}
+                  type="button"
+                >
+                  <UploadIcon />
+                  Importar desde Excel
+                </button>
+              </div>
+            </div>
+            <form className="space-y-3" onSubmit={submit}>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="rounded-lg border border-slate-200/80 p-3">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[0.6875rem] font-semibold text-blue-800">
+                      Empleado <span aria-hidden="true" className="text-red-600">*</span>
+                    </span>
+                  </div>
+                  <label className="block text-[0.5625rem] font-medium text-slate-600" htmlFor="fichaje-employee">
+                    Colaborador
+                  </label>
+                  <Select
+                    className={`${inputClassName} mt-1`}
+                    disabled={Boolean(form.recordId)}
+                    id="fichaje-employee"
+                    onChange={(event) => {
+                      updateForm("employeeDbId", event.target.value);
+                      const chosen = index.employees.find((employee) => String(employee.dbId) === event.target.value);
+                      if (chosen) toast.info(`Empleado seleccionado: ${chosen.name} (Leg. #${chosen.id}).`);
+                    }}
+                    required
+                    value={form.employeeDbId}
+                  >
+                    <option value="">Seleccionar empleado...</option>
+                    {index.employees.map((employee) => (
+                      <option key={employee.dbId} value={employee.dbId}>
+                        {employeeOptionLabel(employee)}
+                      </option>
+                    ))}
+                  </Select>
+                  {formEmployee && (
+                    <p className="mt-1.5 text-[0.5625rem] text-slate-500">
+                      {formSchedule
+                        ? `Turno de esa semana: ${formSchedule.shift_name_snapshot}, ${formSchedule.starts_at_snapshot.slice(0, 5)} a ${formSchedule.ends_at_snapshot.slice(0, 5)}`
+                        : "No tiene horario asignado esa semana."}
+                    </p>
+                  )}
+                </div>
+
+                <fieldset className="rounded-lg border border-slate-200/80 p-3">
+                  <legend className="sr-only">Entrada</legend>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[0.6875rem] font-semibold text-blue-800">Entrada</span>
+                    <button
+                      className="text-[0.5625rem] font-semibold text-blue-700 hover:underline"
+                      onClick={() => {
+                        updateForm("inDate", todayKey());
+                        updateForm("inTime", nowTime());
+                      }}
+                      type="button"
+                    >
+                      Ahora
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-[0.5625rem] font-medium text-slate-600">
+                      Fecha
+                      <DateField
+                        aria-invalid={dayOffBlocked || undefined}
+                        className={`${dateClassName} mt-1`}
+                        max={todayKey()}
+                        onChange={(event) => updateForm("inDate", event.target.value)}
+                        required
+                        value={form.inDate}
+                      />
+                    </label>
+                    <label className="text-[0.5625rem] font-medium text-slate-600">
+                      Hora
+                      <TimeField
+                        className={`${inputClassName} mt-1`}
+                        onChange={(event) => updateForm("inTime", event.target.value)}
+                        required
+                        value={form.inTime}
+                      />
+                    </label>
+                  </div>
+                </fieldset>
+
+                <fieldset className="rounded-lg border border-slate-200/80 p-3">
+                  <legend className="sr-only">Salida</legend>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[0.6875rem] font-semibold text-blue-800">Salida</span>
+                    <span className="text-[0.5625rem] text-slate-500">Opcional si todavía está trabajando</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-[0.5625rem] font-medium text-slate-600">
+                      Fecha
+                      <DateField
+                        aria-invalid={dayOffBlocked || undefined}
+                        className={`${dateClassName} mt-1`}
+                        onChange={(event) => updateForm("outDate", event.target.value)}
+                        value={form.outDate}
+                      />
+                    </label>
+                    <label className="text-[0.5625rem] font-medium text-slate-600">
+                      Hora
+                      <TimeField
+                        className={`${inputClassName} mt-1`}
+                        onChange={(event) => updateForm("outTime", event.target.value)}
+                        value={form.outTime}
+                      />
+                    </label>
+                  </div>
+                </fieldset>
+              </div>
+
+              {formEmployee && formDayOffMessage && !dayOffBlocked && (
+                <p className="text-[0.625rem] font-medium text-amber-700" role="status">{formDayOffMessage}</p>
+              )}
+              {error && (
+                <p className="text-[0.625rem] font-medium text-red-600" role="alert">{error}</p>
+              )}
+              {notice && !error && (
+                <p className="text-[0.625rem] font-medium text-emerald-700" role="status">{notice}</p>
+              )}
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[0.5625rem] font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                  onClick={() => {
+                    resetForm();
+                    setError("");
+                    setNotice("");
+                  }}
+                  type="button"
+                >
+                  {form.recordId ? "Cancelar corrección" : "Limpiar formulario"}
+                </button>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:opacity-60"
+                  disabled={saving}
+                  type="submit"
+                >
+                  <CheckIcon />
+                  {saving ? "Guardando..." : "Guardar fichaje"}
+                </button>
+              </div>
+            </form>
+          </section>
 
           <section aria-label="Resumen del día" className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <article className="flex flex-col justify-between rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
@@ -520,163 +721,6 @@ export default function FichajeEmployer() {
             </article>
           </section>
 
-          <section className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm" id="fichaje-form">
-            <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-              <h2 className="text-sm font-bold tracking-tight text-slate-900">
-                {form.recordId ? "Corregir fichaje" : "Registrar entrada y salida"}
-              </h2>
-              <div className="flex items-center gap-3">
-                <span className="hidden text-[0.5625rem] text-slate-500 xl:inline">
-                  Llegada tarde: más de {LATE_TOLERANCE_MINUTES} minutos después del inicio del turno
-                </span>
-                <button
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[0.5625rem] font-semibold text-emerald-800 hover:bg-emerald-100"
-                  onClick={() => setShowImport(true)}
-                  type="button"
-                >
-                  <Icon className="h-3 w-3">
-                    <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
-                  </Icon>
-                  Importar desde Excel
-                </button>
-              </div>
-            </div>
-            <form className="space-y-3" onSubmit={submit}>
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                <div className="rounded-lg border border-slate-200/80 p-3">
-                  <label className={labelClassName} htmlFor="fichaje-employee">
-                    Empleado <span aria-hidden="true" className="text-red-600">*</span>
-                  </label>
-                  <Select
-                    className={inputClassName}
-                    disabled={Boolean(form.recordId)}
-                    id="fichaje-employee"
-                    onChange={(event) => {
-                      updateForm("employeeDbId", event.target.value);
-                      const chosen = index.employees.find((employee) => String(employee.dbId) === event.target.value);
-                      if (chosen) toast.info(`Empleado seleccionado: ${chosen.name} (Leg. #${chosen.id}).`);
-                    }}
-                    required
-                    value={form.employeeDbId}
-                  >
-                    <option value="">Seleccionar empleado...</option>
-                    {index.employees.map((employee) => (
-                      <option key={employee.dbId} value={employee.dbId}>
-                        {employee.name} (Leg. #{employee.id})
-                      </option>
-                    ))}
-                  </Select>
-                  <p className="mt-1.5 text-[0.5625rem] text-slate-500">
-                    {formEmployee
-                      ? formSchedule
-                        ? `Turno de esa semana: ${formSchedule.shift_name_snapshot}, ${formSchedule.starts_at_snapshot.slice(0, 5)} a ${formSchedule.ends_at_snapshot.slice(0, 5)}`
-                        : "No tiene horario asignado esa semana."
-                      : "Elegí a quién le cargás el fichaje."}
-                  </p>
-                </div>
-
-                <fieldset className="rounded-lg border border-slate-200/80 p-3">
-                  <legend className="sr-only">Entrada</legend>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[0.6875rem] font-semibold text-blue-800">Entrada</span>
-                    <button
-                      className="text-[0.5625rem] font-semibold text-blue-700 hover:underline"
-                      onClick={() => {
-                        updateForm("inDate", todayKey());
-                        updateForm("inTime", nowTime());
-                      }}
-                      type="button"
-                    >
-                      Ahora
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="text-[0.5625rem] font-medium text-slate-600">
-                      Fecha
-                      <input
-                        className={`${inputClassName} mt-1`}
-                        max={todayKey()}
-                        onChange={(event) => updateForm("inDate", event.target.value)}
-                        required
-                        type="date"
-                        value={form.inDate}
-                      />
-                    </label>
-                    <label className="text-[0.5625rem] font-medium text-slate-600">
-                      Hora
-                      <input
-                        className={`${inputClassName} mt-1`}
-                        onChange={(event) => updateForm("inTime", event.target.value)}
-                        required
-                        type="time"
-                        value={form.inTime}
-                      />
-                    </label>
-                  </div>
-                </fieldset>
-
-                <fieldset className="rounded-lg border border-slate-200/80 p-3">
-                  <legend className="sr-only">Salida</legend>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[0.6875rem] font-semibold text-blue-800">Salida</span>
-                    <span className="text-[0.5625rem] text-slate-500">Opcional si todavía está trabajando</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="text-[0.5625rem] font-medium text-slate-600">
-                      Fecha
-                      <input
-                        className={`${inputClassName} mt-1`}
-                        onChange={(event) => updateForm("outDate", event.target.value)}
-                        type="date"
-                        value={form.outDate}
-                      />
-                    </label>
-                    <label className="text-[0.5625rem] font-medium text-slate-600">
-                      Hora
-                      <input
-                        className={`${inputClassName} mt-1`}
-                        onChange={(event) => updateForm("outTime", event.target.value)}
-                        type="time"
-                        value={form.outTime}
-                      />
-                    </label>
-                  </div>
-                </fieldset>
-              </div>
-
-              {error && (
-                <p className="text-[0.625rem] font-medium text-red-600" role="alert">{error}</p>
-              )}
-              {notice && !error && (
-                <p className="text-[0.625rem] font-medium text-emerald-700" role="status">{notice}</p>
-              )}
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[0.5625rem] font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
-                  onClick={() => {
-                    resetForm();
-                    setError("");
-                    setNotice("");
-                  }}
-                  type="button"
-                >
-                  {form.recordId ? "Cancelar corrección" : "Limpiar formulario"}
-                </button>
-                <button
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#1e40af] px-3.5 py-1.5 text-[0.5625rem] font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:opacity-60"
-                  disabled={saving}
-                  type="submit"
-                >
-                  <Icon className="h-3 w-3">
-                    <path d="M5 13l4 4L19 7" />
-                  </Icon>
-                  {saving ? "Guardando..." : "Guardar fichaje"}
-                </button>
-              </div>
-            </form>
-          </section>
-
           <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -698,11 +742,10 @@ export default function FichajeEmployer() {
                   </Icon>
                 </button>
                 <label className="sr-only" htmlFor="fichajes-date">Fecha</label>
-                <input
+                <DateField
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.5625rem] font-semibold text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   id="fichajes-date"
                   onChange={(event) => event.target.value && setSelectedDate(event.target.value)}
-                  type="date"
                   value={selectedDate}
                 />
                 <button
@@ -815,9 +858,16 @@ export default function FichajeEmployer() {
                         <div className="flex items-center justify-end gap-1 text-slate-500">
                           <button
                             aria-label={row.record ? `Corregir fichaje de ${row.employee.name}` : `Cargar fichaje de ${row.employee.name}`}
-                            className="rounded-md p-1.5 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                            className="rounded-md p-1.5 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                            disabled={Boolean(dayOffMessages[row.type])}
                             onClick={() => loadRow(row)}
-                            title={row.record ? "Corregir" : "Cargar fichaje"}
+                            title={
+                              dayOffMessages[row.type]
+                                ? `${justifiedLabels[row.type]}: no se registran fichajes`
+                                : row.record
+                                  ? "Corregir"
+                                  : "Cargar fichaje"
+                            }
                             type="button"
                           >
                             <Icon className="h-3.5 w-3.5">

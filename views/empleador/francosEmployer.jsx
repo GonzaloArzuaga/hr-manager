@@ -1,4 +1,10 @@
 import React, { useMemo, useState } from "react";
+import FrancoDatePicker from "../../components/FrancoDatePicker";
+import { fieldClass } from "../../components/fieldStyles";
+import { useExclusiveOverlay } from "../../lib/overlays";
+import MonthlyFrancosCard from "../../components/cards/empleador/MonthlyFrancosCard";
+import { employeeOptionLabel } from "../../data/employeeDirectory";
+import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import EmployeeIdentity from "../../components/EmployeeIdentity";
 import PaginationControls from "../../components/PaginationControls";
@@ -178,13 +184,11 @@ function RequestRow({ employee, request, onResolve, requiredNoticeDays }) {
       <td className="employee-identity-cell whitespace-nowrap py-2.5 pl-3 pr-2 text-left sm:pl-5">
         <EmployeeIdentity
           avatarStyle={employee.avatarStyle}
+          employeeId={employee.id}
           avatarClassName="ring-1 ring-current/20"
           department={employee.department}
           initials={employee.initials}
           name={employee.name}
-          nameClassName="text-[0.625rem] leading-snug"
-          metadataClassName="text-[0.5625rem]"
-          size="lg"
         />
       </td>
       <td className="px-2 py-2.5 text-center sm:px-3">
@@ -242,6 +246,7 @@ function RequestRow({ employee, request, onResolve, requiredNoticeDays }) {
 }
 
 function RulesDialog({ onClose, requiredNoticeDays, weeklyDaysOff }) {
+  useExclusiveOverlay(true, onClose);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
@@ -308,6 +313,8 @@ export default function FrancosEmployer() {
   const [month, setMonth] = useState("Todos");
   const [pageSize, setPageSize] = useState(5);
   const [showRules, setShowRules] = useState(false);
+  const [showDayPicker, setShowDayPicker] = useState(false);
+  const todayValue = new Date().toLocaleDateString("sv-SE");
   const counts = {
     Todos: requests.length,
     "Pendiente de revisión": requests.filter((request) => request.status === "Pendiente de revisión").length,
@@ -409,7 +416,7 @@ export default function FrancosEmployer() {
   );
   const remainingFrancos = Math.max(
     0,
-    monthlyFrancoAllowance - assignedDaysForPeriod,
+    getMonthlyFrancoAllowance(businessRules.weeklyDaysOff, assignmentForm.month) - assignedDaysForPeriod,
   );
   const daysInSelectedMonth = getDaysInMonth(assignmentForm.month);
   const [year, monthNumber] = assignmentForm.month.split("-").map(Number);
@@ -447,6 +454,18 @@ export default function FrancosEmployer() {
           ? current.selectedDays.filter((selectedDay) => selectedDay !== day)
           : [...current.selectedDays, day].sort((a, b) => a - b),
       };
+    });
+    setAssignmentError("");
+    setAssignmentSuccess("");
+  }
+
+  // Cambia el mes del calendario de francos (no se puede ir a meses pasados)
+  function changeAssignmentMonth(step) {
+    setAssignmentForm((current) => {
+      const [year, month] = current.month.split("-").map(Number);
+      const date = new Date(year, month - 1 + step, 1);
+      const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      return next < getCurrentMonth() ? current : { ...current, month: next, selectedDays: [] };
     });
     setAssignmentError("");
     setAssignmentSuccess("");
@@ -590,7 +609,7 @@ export default function FrancosEmployer() {
                     Empleado <span aria-hidden="true" className="text-red-600">*</span>
                   </label>
                   <Select
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className={fieldClass}
                     id="franco-employee"
                     name="employeeId"
                     onChange={updateAssignmentForm}
@@ -602,118 +621,52 @@ export default function FrancosEmployer() {
                       .filter((employee) => employee.status === "Activo")
                       .map((employee) => (
                         <option key={employee.id} value={employee.id}>
-                          {employee.name} (Leg. #{employee.id})
+                          {employeeOptionLabel(employee)}
                         </option>
                       ))}
                   </Select>
                 </div>
-                <div className="md:col-span-3">
-                  <label
-                    className="mb-1 block text-[0.6875rem] font-semibold text-slate-700"
-                    htmlFor="franco-month"
-                  >
-                    Período (mes) <span aria-hidden="true" className="text-red-600">*</span>
+                <div className="md:col-span-4">
+                  <label className="mb-1 block text-[0.6875rem] font-semibold text-slate-700" htmlFor="franco-dates">
+                    Período y fechas <span aria-hidden="true" className="text-red-600">*</span>
                   </label>
-                  <input
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] text-slate-700 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    id="franco-month"
-                    min={currentMonth}
-                    name="month"
-                    onChange={updateAssignmentForm}
-                    required
-                    type="month"
-                    value={assignmentForm.month}
+                  <FrancoDatePicker
+                    disabled={!selectedEmployee}
+                    id="franco-dates"
+                    minDate={todayValue}
+                    minMonth={currentMonth}
+                    month={assignmentForm.month}
+                    onChangeMonth={changeAssignmentMonth}
+                    onToggleDate={(date) => toggleAssignmentDay(Number(date.slice(8, 10)))}
+                    open={showDayPicker}
+                    placeholder={selectedEmployee ? "Seleccionar fechas" : "Elegí primero el empleado"}
+                    remaining={remainingFrancos}
+                    requestedDates={new Set([...takenDaysForPeriod].map((day) => `${assignmentForm.month}-${String(day).padStart(2, "0")}`))}
+                    selectedDates={assignmentForm.selectedDays.map((day) => `${assignmentForm.month}-${String(day).padStart(2, "0")}`)}
+                    setOpen={setShowDayPicker}
                   />
                 </div>
-                <div className="md:col-span-3">
+                <div className="md:col-span-4">
                   <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-700">
                     Francos restantes
                   </span>
                   <div
                     aria-live="polite"
-                    className="flex items-center justify-between rounded-lg border border-slate-200/80 bg-blue-50 px-2.5 py-1.5"
+                    className="hr-field flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5"
                   >
                     <span className="flex items-center gap-1 text-[0.5625rem] font-bold text-blue-700">
-                      <Icon className="h-3 w-3">
-                        <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </Icon>
-                      {selectedEmployee ? remainingFrancos : "—"} francos
+                      {selectedEmployee
+                        ? (() => { const left = Math.max(0, remainingFrancos - assignmentForm.selectedDays.length); return `${left} ${left === 1 ? "franco" : "francos"}`; })()
+                        : "—"}
                     </span>
                     <span className="text-[0.5625rem] text-slate-500">
-                      {selectedEmployee ? "disponibles en el mes" : "seleccioná empleado"}
+                      {selectedEmployee
+                        ? `${assignmentForm.selectedDays.length} seleccionados · cupo de ${getMonthlyFrancoAllowance(businessRules.weeklyDaysOff, assignmentForm.month)} en el mes`
+                        : "seleccioná empleado"}
                     </span>
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-700">
-                    Seleccionados
-                  </span>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-center text-[0.5625rem] font-semibold text-slate-700">
-                    {assignmentForm.selectedDays.length} / {remainingFrancos}
                   </div>
                 </div>
               </div>
-
-              <fieldset>
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <legend className="text-[0.6875rem] font-semibold text-slate-700">
-                    Seleccioná los días de franco{" "}
-                    <span aria-hidden="true" className="text-red-600">*</span>
-                  </legend>
-                  <span className="text-[0.5625rem] text-slate-500">
-                    Mínimo 1 · máximo {remainingFrancos}
-                  </span>
-                </div>
-                <div className="grid grid-cols-7 gap-1 text-center">
-                  {["D", "L", "M", "X", "J", "V", "S"].map((weekday) => (
-                    <span
-                      className="py-1 text-[0.5625rem] font-semibold text-slate-500"
-                      key={weekday}
-                    >
-                      {weekday}
-                    </span>
-                  ))}
-                  {Array.from({ length: firstWeekday }, (_, index) => (
-                    <span aria-hidden="true" key={`empty-${index}`} />
-                  ))}
-                  {Array.from({ length: daysInSelectedMonth }, (_, index) => {
-                    const day = index + 1;
-                    const isSelected = assignmentForm.selectedDays.includes(day);
-                    const isAtLimit =
-                      assignmentForm.selectedDays.length >= remainingFrancos;
-                    const isPastDay = isPastDayInCurrentMonth(
-                      assignmentForm.month,
-                      day,
-                    );
-                    const isTaken = takenDaysForPeriod.has(day);
-
-                    return (
-                      <button
-                        aria-pressed={isSelected}
-                        className={`rounded-md border px-1 py-1.5 text-[0.5625rem] font-medium transition ${
-                          isPastDay || isTaken
-                            ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-400"
-                            : isSelected
-                              ? "border-blue-700 bg-blue-700 text-white"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50"
-                        } disabled:cursor-not-allowed disabled:opacity-40`}
-                        disabled={
-                          !selectedEmployee ||
-                          isPastDay ||
-                          isTaken ||
-                          (!isSelected && isAtLimit) ||
-                          remainingFrancos === 0
-                        }
-                        key={day}
-                        onClick={() => toggleAssignmentDay(day)}
-                        type="button"
-                      >
-                        {day}
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
 
               {assignmentError && (
                 <p className="text-[0.625rem] font-medium text-rose-600" role="alert">
@@ -743,14 +696,18 @@ export default function FrancosEmployer() {
                   disabled={saving}
                   type="submit"
                 >
-                  <Icon className="h-3 w-3">
-                    <path d="M12 4v16m8-8H4" />
-                  </Icon>
+                  <CheckIcon />
                   Registrar Franco
                 </button>
               </div>
             </form>
           </section>
+
+          <MonthlyFrancosCard
+            employees={empleadosData.employees}
+            requests={requests}
+            weeklyDaysOff={businessRules.weeklyDaysOff}
+          />
 
           <section
             aria-label="Resumen de solicitudes"
@@ -830,14 +787,11 @@ export default function FrancosEmployer() {
                     </button>
                   ))}
                 </div>
-                <label className="relative inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.5625rem] font-semibold text-slate-700">
-                  <Icon className="h-3 w-3 text-slate-500">
-                    <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </Icon>
+                <label className="w-44">
                   <span className="sr-only">Filtrar por mes</span>
                   <Select
                     aria-label="Filtrar por mes"
-                    className="w-36 cursor-pointer border-0 bg-transparent p-0 pr-4 text-[0.5625rem] font-semibold focus:ring-0"
+                    className={fieldClass}
                     onChange={(event) => setMonth(event.target.value)}
                     value={month}
                   >
