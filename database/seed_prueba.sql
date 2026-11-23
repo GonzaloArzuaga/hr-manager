@@ -21,7 +21,7 @@ DECLARE
 BEGIN
   -- Empresa, reglas por defecto, régimen de vacaciones y cuenta del empleador
   v_company := public.admin_create_company('Empresa Test SRL', 'empleador@test.com', 'Valeria Rossi');
-  SELECT id INTO v_employer FROM public.user_accounts WHERE company_id = v_company AND role = 'employer';
+  SELECT id INTO v_employer FROM public.user_accounts WHERE company_id = v_company AND role = 'company';
 
   INSERT INTO public.shift_types (company_id, code, name, starts_at, ends_at) VALUES
     (v_company, 'turno-manana', 'Turno Mañana', '06:00', '14:00'),

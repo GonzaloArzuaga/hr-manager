@@ -17,11 +17,11 @@ Deno.serve(async (req) => {
 
   const { data: account } = await userClient
     .from("user_accounts")
-    .select("company_id, role, is_active")
+    .select("company_id, role, is_active, employee_id")
     .eq("auth_user_id", userId)
     .maybeSingle();
-  if (!account || account.role !== "employer" || !account.is_active) {
-    return json({ error: "Solo el empleador puede cambiar el email de un empleado." }, 403);
+  if (!account || !account.is_active || !["company", "manager"].includes(account.role)) {
+    return json({ error: "Solo la empresa o un encargado pueden cambiar el email de un empleado." }, 403);
   }
 
   const body = await readBody(req);
@@ -32,11 +32,23 @@ Deno.serve(async (req) => {
 
   const { data: employee } = await admin
     .from("employees")
-    .select("id, email")
+    .select("id, email, branch_id")
     .eq("id", employeeId)
     .eq("company_id", account.company_id)
     .maybeSingle();
   if (!employee) return json({ error: "El empleado no pertenece a tu organización." }, 404);
+
+  // El encargado solo alcanza a los empleados de su sucursal
+  if (account.role === "manager") {
+    const { data: own } = await admin
+      .from("employees")
+      .select("branch_id")
+      .eq("id", account.employee_id)
+      .maybeSingle();
+    if (!own || own.branch_id !== employee.branch_id) {
+      return json({ error: "El empleado no pertenece a tu sucursal." }, 403);
+    }
+  }
   if (employee.email === email) return json({ email });
 
   const { data: target } = await admin

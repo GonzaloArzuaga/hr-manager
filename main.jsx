@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { supabase } from "./lib/supabaseClient";
-import { hydrate, loadAccount, store } from "./lib/store";
+import { hydrate, loadAccount, panelRoleFor, store } from "./lib/store";
 import { currentPath, interceptLinks, navigate, usePath } from "./lib/router";
 import AppShell from "./components/AppShell";
 import FeedbackHost from "./components/FeedbackHost";
@@ -53,11 +53,15 @@ const adminViews = {
   "/admin/configuration": () => import("./views/participante/configuration"),
 };
 
+// La configuración se comparte, pero su contenido depende del tipo de usuario:
+// solo la Empresa ve las reglas de negocio y los catálogos.
+const configurationProps = (account) => ({ userType: account.role });
+
 const viewProps = {
-  "/employer/configuration": { userType: "employer" },
-  "/configuracion": { userType: "employer" },
-  "/employee/configuration": { userType: "employee" },
-  "/admin/configuration": { userType: "admin" },
+  "/employer/configuration": configurationProps,
+  "/configuracion": configurationProps,
+  "/employee/configuration": configurationProps,
+  "/admin/configuration": configurationProps,
 };
 
 // Rutas de versiones anteriores (en castellano). Siguen funcionando porque hay
@@ -105,13 +109,15 @@ async function freshData(force = false) {
 }
 
 function homeFor(account) {
-  if (account.role === "admin") return "/admin";
-  return account.role === "employer" ? "/employer" : "/employee";
+  const panel = panelRoleFor(account.role);
+  if (panel === "admin") return "/admin";
+  return panel === "employer" ? "/employer" : "/employee";
 }
 
 function viewsFor(account) {
-  if (account.role === "admin") return adminViews;
-  return account.role === "employer" ? employerViews : employeeViews;
+  const panel = panelRoleFor(account.role);
+  if (panel === "admin") return adminViews;
+  return panel === "employer" ? employerViews : employeeViews;
 }
 
 function isKnownPath(path) {
@@ -186,7 +192,8 @@ async function resolveRoute(path) {
   // Módulos que no incluye el plan de la empresa
   if (!hasModule(moduleForPath(path))) return { redirect: homeFor(account) };
   loadNotifications();
-  return { load: views[path], props: viewProps[path], shell: true };
+  const props = viewProps[path];
+  return { load: views[path], props: typeof props === "function" ? props(account) : props, shell: true };
 }
 
 // En las páginas públicas se piden de entrada los planes (Precios) y se prepara el

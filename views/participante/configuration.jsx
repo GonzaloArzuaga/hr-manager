@@ -392,8 +392,12 @@ function AdminConfiguration() {
   );
 }
 
-function ParticipantConfiguration({ userType = "employer" }) {
-  const isEmployer = userType !== "employee";
+function ParticipantConfiguration({ userType = "company" }) {
+  // Solo la cuenta Empresa configura el negocio. El Encargado y el Empleado
+  // únicamente administran los datos de su propio usuario.
+  const isCompany = userType === "company";
+  // La cuenta Empresa tiene nombre visible y avatar fijos: no sube foto.
+  const usesProfilePhoto = !isCompany;
   const user = {
     name: store.user?.name ?? "",
     role: store.user?.role ?? "",
@@ -678,7 +682,7 @@ function ParticipantConfiguration({ userType = "employer" }) {
           )}
 
           <div className="space-y-8">
-            {isEmployer && (
+            {isCompany && (
               <section aria-label="Reglas de negocio">
                 <SectionTitle icon="M4 6h16M4 12h16M4 18h16M8 3v6m8 3v6">
                   Configuración de Reglas de Negocio
@@ -1075,7 +1079,7 @@ function ParticipantConfiguration({ userType = "employer" }) {
               </section>
             )}
 
-            {isEmployer && (
+            {isCompany && (
               <section aria-label="Estructura de la empresa" className="mb-6">
                 <SectionTitle icon="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01M9 18v.01">
                   Estructura de la empresa
@@ -1093,57 +1097,60 @@ function ParticipantConfiguration({ userType = "employer" }) {
               <SectionTitle icon="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m6-10a4 4 0 100-8 4 4 0 000 8zm7-5h6m-3-3v6">
                 Datos de Usuario
               </SectionTitle>
-              <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm">
-                {profilePhotoUrl ? (
-                  <img
-                    alt={`Foto de perfil de ${user.name}`}
-                    className="h-16 w-16 rounded-full object-cover"
-                    src={profilePhotoUrl}
+              {usesProfilePhoto && (
+                <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm">
+                  {profilePhotoUrl ? (
+                    <img
+                      alt={`Foto de perfil de ${user.name}`}
+                      className="h-16 w-16 rounded-full object-cover"
+                      src={profilePhotoUrl}
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white"
+                    >
+                      {store.user?.initials}
+                    </span>
+                  )}
+                  <div className="min-w-[12rem] flex-1">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Foto de perfil
+                    </h3>
+                    <p className="mt-1 text-[0.625rem] text-slate-500">
+                      PNG, JPEG o WEBP. Se recorta en cuadrado y se ve en el menú y en las listas de tu empresa.
+                    </p>
+                  </div>
+                  <input
+                    accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                    className="sr-only"
+                    onChange={updateProfilePhoto}
+                    ref={profilePhotoInput}
+                    type="file"
                   />
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white"
-                  >
-                    {store.user?.initials}
-                  </span>
-                )}
-                <div className="min-w-[12rem] flex-1">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Foto de perfil
-                  </h3>
-                  <p className="mt-1 text-[0.625rem] text-slate-500">
-                    PNG, JPEG o WEBP. Se recorta en cuadrado y se ve en el menú y en las listas de tu empresa.
-                  </p>
-                </div>
-                <input
-                  accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-                  className="sr-only"
-                  onChange={updateProfilePhoto}
-                  ref={profilePhotoInput}
-                  type="file"
-                />
-                <div className="flex gap-2">
-                  {profilePhotoUrl && (
+                  <div className="flex gap-2">
+                    {profilePhotoUrl && (
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-[0.5625rem] font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                        disabled={uploadingPhoto}
+                        onClick={deleteProfilePhoto}
+                        type="button"
+                      >
+                        Quitar foto
+                      </button>
+                    )}
                     <button
-                      className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-[0.5625rem] font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                      className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-[0.5625rem] font-bold text-blue-800 transition-colors hover:bg-blue-100 disabled:opacity-60"
                       disabled={uploadingPhoto}
-                      onClick={deleteProfilePhoto}
+                      onClick={() => profilePhotoInput.current?.click()}
                       type="button"
                     >
-                      Quitar foto
+                      {uploadingPhoto ? "Guardando..." : profilePhotoUrl ? "Cambiar foto" : "Subir foto"}
                     </button>
-                  )}
-                  <button
-                    className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-[0.5625rem] font-bold text-blue-800 transition-colors hover:bg-blue-100 disabled:opacity-60"
-                    disabled={uploadingPhoto}
-                    onClick={() => profilePhotoInput.current?.click()}
-                    type="button"
-                  >
-                    {uploadingPhoto ? "Guardando..." : profilePhotoUrl ? "Cambiar foto" : "Subir foto"}
-                  </button>
+                  </div>
                 </div>
-              </div>
+              )}
+
               <div className="grid grid-cols-1 gap-6 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm lg:grid-cols-2">
                 <form className="space-y-4" onSubmit={saveEmail}>
                   <div className="mb-5 flex items-center gap-2">
@@ -1233,7 +1240,7 @@ function ParticipantConfiguration({ userType = "employer" }) {
   );
 }
 
-export default function Configuration({ userType = "employer" }) {
+export default function Configuration({ userType = "company" }) {
   if (userType === "admin") return <AdminConfiguration />;
   return <ParticipantConfiguration userType={userType} />;
 }

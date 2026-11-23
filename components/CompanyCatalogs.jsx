@@ -5,7 +5,7 @@ import { confirmDialog, promptDialog, toast } from "../lib/feedback";
 import { store } from "../lib/store";
 
 const catalogs = [
-  { table: "job_positions", raw: "jobPositions", field: "role", title: "Puestos", singular: "puesto", placeholder: "Ej. Operador de depósito" },
+  { table: "job_positions", raw: "jobPositions", field: "role", title: "Puestos", singular: "puesto", placeholder: "Ej. Operador de depósito", manageable: true },
   { table: "departments", raw: "departments", field: "department", title: "Áreas", singular: "área", placeholder: "Ej. Logística" },
   { table: "branches", raw: "branches", field: "branch", title: "Sucursales", singular: "sucursal", placeholder: "Ej. Sucursal Norte" },
 ];
@@ -77,6 +77,26 @@ function CatalogCard({ catalog, onChange }) {
     );
   }
 
+  // Un puesto habilitado como Encargado convierte en Encargado a quienes lo
+  // ocupan: pasan a gestionar a los empleados de su sucursal.
+  async function toggleManager(item) {
+    const confirmed = await confirmDialog({
+      title: item.is_manager ? "Quitar el rol de Encargado" : "Habilitar como Encargado",
+      message: item.is_manager
+        ? `Quienes ocupan ${item.name} dejan de gestionar a los empleados de su sucursal y pasan a ser empleados comunes.`
+        : `Quienes ocupan ${item.name} van a poder gestionar a los empleados de su sucursal y dar de alta empleados en ella.`,
+      confirmLabel: item.is_manager ? "Quitar" : "Habilitar",
+      tone: item.is_manager ? "danger" : "default",
+    });
+    if (!confirmed) return;
+    run(
+      () => saveCatalogItem(catalog.table, { id: item.id, is_manager: !item.is_manager }),
+      item.is_manager
+        ? `${item.name} ya no es un puesto de Encargado.`
+        : `${item.name} quedó habilitado como Encargado.`,
+    );
+  }
+
   async function remove(item) {
     const confirmed = await confirmDialog({
       title: `Eliminar ${catalog.singular}`,
@@ -100,12 +120,29 @@ function CatalogCard({ catalog, onChange }) {
             <div className="min-w-0">
               <p className={`truncate text-[0.625rem] font-semibold ${item.is_active ? "text-slate-800" : "text-slate-400 line-through"}`}>
                 {item.name}
+                {catalog.manageable && item.is_manager && (
+                  <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 align-middle text-[0.5rem] font-bold uppercase tracking-wide text-amber-800">
+                    Encargado
+                  </span>
+                )}
               </p>
               <p className="text-[0.5625rem] text-slate-500">
                 {usage[item.name] ?? 0} {usage[item.name] === 1 ? "empleado" : "empleados"}
               </p>
             </div>
             <div className="flex shrink-0 gap-1">
+              {catalog.manageable && (
+                <button
+                  className={`rounded px-1.5 py-0.5 text-[0.5625rem] font-semibold ${
+                    item.is_manager ? "text-amber-700 hover:bg-amber-50" : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  disabled={busy}
+                  onClick={() => toggleManager(item)}
+                  type="button"
+                >
+                  {item.is_manager ? "Quitar Encargado" : "Marcar Encargado"}
+                </button>
+              )}
               <button className="rounded px-1.5 py-0.5 text-[0.5625rem] font-semibold text-blue-700 hover:bg-blue-50" disabled={busy} onClick={() => rename(item)} type="button">
                 Renombrar
               </button>
@@ -164,6 +201,11 @@ export default function CompanyCatalogs() {
           <CatalogCard catalog={catalog} key={catalog.table} onChange={refresh} />
         ))}
       </div>
+      <p className="text-[0.5625rem] leading-relaxed text-slate-500">
+        Un puesto marcado como <strong>Encargado</strong> habilita a quienes lo ocupan a gestionar
+        a los empleados de su sucursal y a darlos de alta. No ven las demás sucursales ni esta
+        configuración.
+      </p>
     </div>
   );
 }

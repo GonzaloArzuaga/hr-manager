@@ -30,9 +30,9 @@ export default function Login() {
         ? "/login/change-temporary-password"
         : account.role === "admin"
           ? "/admin"
-          : account.role === "employer"
-            ? "/employer"
-            : "/employee";
+          : account.role === "employee"
+            ? "/employee"
+            : "/employer";
       navigate(destination, { replace: true });
     } catch (error) {
       setNotice(error.message);

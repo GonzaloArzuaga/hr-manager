@@ -45,7 +45,7 @@ BEGIN
    WHERE id = v_company AND plan_code = 'operativo'
      AND EXISTS (SELECT 1 FROM public.plans WHERE code = 'profesional');
   SELECT id INTO v_employer FROM public.user_accounts
-   WHERE company_id = v_company AND role = 'employer' ORDER BY id LIMIT 1;
+   WHERE company_id = v_company AND role = 'company' ORDER BY id LIMIT 1;
 
   -- 1. Veinte empleados más, sin cuenta de acceso
   SELECT COALESCE(MAX(NULLIF(regexp_replace(employee_number, '\D', '', 'g'), '')::INT), 0)

@@ -29,7 +29,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 - `components/AppShell.jsx`: marco de las páginas privadas; menú lateral fijo en escritorio y cajón desplegable debajo de 1024 px. Las vistas no deben renderizar `Sidebar`.
 - Medidas en `rem`, nunca en `px`: el tamaño base escalonado está en `styles.css`.
 - `lib/notifications.js` y `components/NotificationBell.jsx`: notificaciones (las crea la base con disparadores; tiempo real más consulta cada minuto). No se muestran al administrador del sistema.
-- Roles: `store.role` es `admin`, `employer` o `employee`. El administrador del sistema se identifica mediante `system_admins` y usa las vistas de `views/admin/`.
+- Roles: `store.role` es `admin`, `company`, `manager` o `employee`. `store.panelRole` los agrupa en los tres paneles existentes (`admin`, `employer`, `employee`): la Empresa y el Encargado comparten las vistas y las rutas de `/employer`. `store.isCompany`, `store.isManager` y `store.isEmployer` (cualquiera de los dos) deciden qué se habilita dentro de ese panel, y `store.branch` tiene la sucursal del Encargado. El administrador del sistema se identifica mediante `system_admins` y usa las vistas de `views/admin/`.
 - `lib/workforce.js`: qué le toca a cada empleado cada día (turno, franco, vacaciones) y fichajes; lo usan Estadísticas y Fichajes.
 - Gráficos: `components/ChartCanvas.jsx` (Chart.js). Fichajes del empleador: RPC `register_attendance`; las bajas de fichajes van directo a la tabla (RLS del empleador).
 - `views/` contiene una vista por página, agrupada por área:
@@ -81,7 +81,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 | `/admin/configuracion` | Configuración del administrador y planes |
 | `/configuracion` | Alias de configuración del empleador |
 
-Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz esté en español. `/configuracion` es alias del empleador. El empleado no ve la gestión de empleados, fichajes ni estadísticas. La configuración se comparte visualmente, pero usa contenido y ruta distinta por rol. Ninguna ruta constituye por sí sola una barrera de autorización real.
+Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz esté en español. La Empresa y el Encargado comparten las rutas de `/employer`; lo que cambia es el alcance de los datos, que impone la base. `/configuracion` es alias de ese panel. El empleado no ve la gestión de empleados, fichajes ni estadísticas. La configuración se comparte visualmente, pero su contenido depende del tipo de usuario: solo la Empresa ve las reglas de negocio y la estructura de la empresa, y solo ella no tiene foto de perfil. Ninguna ruta constituye por sí sola una barrera de autorización real.
 
 ## Diseño visual y estilos
 
@@ -123,7 +123,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 
 - Usar `Navbar.jsx` y `Footer.jsx` en páginas públicas y de acceso que ya los incorporan. Evitar layouts alternativos innecesarios.
 - `Navbar` permite configurar enlaces y acción con props; el espacio de acción mantiene ancho fijo para que textos como «Volver» no desplacen el menú.
-- `Sidebar.jsx` obtiene el rol de `store.role`. El empleado ve Inicio, Horarios, Francos, Vacaciones, Sueldos y Configuración; no ve Empleados, Fichajes ni Estadísticas. Sus enlaces llevan a rutas bajo `/employee`.
+- `Sidebar.jsx` obtiene el panel de `store.panelRole`. El empleado ve Inicio, Horarios, Francos, Vacaciones, Sueldos y Configuración; no ve Empleados, Fichajes ni Estadísticas. Sus enlaces llevan a rutas bajo `/employee`.
 - Mantener ambos roles funcionando al cambiar Sidebar o configuración.
 - `EmployeeIdentity.jsx` recibe nombre, legajo, área/detalle, iniciales, estilo, tamaño y opcionalmente URL de avatar. Reutilizarlo en vez de recrear avatares en una vista.
 - Los enlaces del Sidebar del empleado llevan a las rutas propias bajo `/employee`; no convertirlos en anclas ni exponerle la gestión del empleador.
@@ -132,7 +132,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 
 ### Acceso
 
-- `views/login.jsx` inicia sesión con Supabase Auth. Las cuentas no se registran solas: el administrador crea la empresa y su empleador, y el empleador crea a sus empleados.
+- `views/login.jsx` inicia sesión con Supabase Auth. Las cuentas no se registran solas: el administrador del sistema crea la empresa y su cuenta Empresa, la Empresa crea encargados y empleados, y el Encargado solo crea empleados de su sucursal.
 - Si `user_accounts.must_change_password` es verdadero, `main.jsx` solo permite `/login/change-temporary-password` (RF-03).
 - `/login/recover` envía el enlace de recuperación y `/login/change-password` lo recibe (RF-08, RNF-11). Política de contraseñas: 8 caracteres y un carácter especial (RNF-03), validada en `lib/api.js`.
 - Una cuenta dada de baja (`is_active = false`) no puede usar el sistema.
@@ -142,7 +142,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 
 - Las lecturas de datos de negocio pasan por `lib/store.js` y las escrituras por `lib/api.js`; las vistas no acceden directamente a tablas. `views/newPassword.jsx` coordina los eventos de sesión de Supabase Auth para el flujo de recuperación.
 - Solicitudes de francos y vacaciones, respuestas del empleador, asignaciones directas, cancelaciones y fichajes usan funciones de la base (`submit_days_off_request`, `submit_vacation_request`, `resolve_*`, `assign_*`, `cancel_my_request`, `clock_in`, `clock_out`). Los mensajes de error que devuelven ya están en español y se muestran tal cual.
-- El alta de empleados pasa por la función de servidor `supabase/functions/create-employee`, porque crear usuarios requiere la clave de servicio (RF-07, RNF-08). Esa clave nunca va en el frontend.
+- El alta de personal pasa por la función de servidor `supabase/functions/create-employee`, porque crear usuarios requiere la clave de servicio (RF-07, RNF-08). Esa clave nunca va en el frontend. El rol de la cuenta lo decide el puesto: si está marcado como Encargado, nace con rol `manager`. La función rechaza a un Encargado que intente dar de alta fuera de su sucursal o con un puesto de Encargado.
 - El cambio de email del empleado usa `supabase/functions/update-employee-email`; la gestión administrativa de empresas usa `supabase/functions/admin-companies`.
 - Los recibos se suben al bucket privado `payroll-receipts` con la ruta `{empresa}/{empleado}/{archivo}.pdf` y se abren con URLs firmadas de 5 minutos (RNF-06).
 - Las reglas de negocio y los tipos de turno se guardan en la base. Los tipos de turno quitados se desactivan para conservar los horarios históricos.
@@ -150,7 +150,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 - Fichajes por planilla: `components/AttendanceImport.jsx` procesa archivos `.xlsx` o `.csv`; `importAttendance(rows)` llama a `import_attendance`, que devuelve el resultado de cada fila. La vista previa muestra errores por fila y la importación admite hasta 3000 filas.
 - Estadísticas del empleador: usan `lib/workforce.js` y `components/ChartCanvas.jsx` para resumir cobertura y demanda por filtros de período y departamento.
 - Administración del sistema: `adminDashboard`, `adminListCompanies`, `adminCreateCompany`, `adminSetCompanyStatus`, `listPlans`, `adminSetCompanyPlan` y `adminUpdatePlan` respaldan el panel, empresas y planes. La base controla el límite de empleados al crear o reactivar cuentas.
-- Puestos, áreas y sucursales se editan con `saveCatalogItem` y `deleteCatalogItem`; los nombres no se repiten, sin importar mayúsculas.
+- Puestos, áreas y sucursales se editan con `saveCatalogItem` y `deleteCatalogItem`; los nombres no se repiten, sin importar mayúsculas. Un puesto puede marcarse como Encargado (`is_manager`): quienes lo ocupan pasan a rol `manager` y gestionan su sucursal. La base sincroniza el rol de la cuenta al cambiar el puesto del empleado o el flag del puesto.
 - No usar `<select>` ni `<datalist>` en los paneles: usar `components/Select.jsx` (misma forma que `<select>`) y `components/SuggestInput.jsx` (input con `options`).
 - Nunca usar `alert`, `confirm` ni `prompt` del navegador: usar `confirmDialog`, `promptDialog` y `toast` de `lib/feedback.js`. Toda operación del empleador o del administrador informa su resultado con un `toast`.
 - No ocultar errores con valores alternativos que aparenten éxito.
@@ -164,7 +164,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 
 ### Base de datos
 
-El esquema completo, con políticas y funciones, está en `database/schema.sql`. Los datos de prueba están en `database/seed_prueba.sql` y un año completo de datos de demostración en `database/datos_demo_anual.sql`. Para proyectos existentes, aplicar en orden `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql` y `database/actualizacion_planes_perfil_fichadas.sql`; los cambios también se integran en `schema.sql`.
+El esquema completo, con políticas y funciones, está en `database/schema.sql`. Los datos de prueba están en `database/seed_prueba.sql` y un año completo de datos de demostración en `database/datos_demo_anual.sql`. Para proyectos existentes, aplicar en orden `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql` y `database/actualizacion_v3_jerarquia.sql`; los cambios también se integran en `schema.sql`. `database/datos_demo_jerarquia.sql` agrega datos de demostración de la jerarquía: dos sucursales y una cuenta de Encargado.
 
 ## Accesibilidad y calidad
 
@@ -208,3 +208,21 @@ El esquema completo, con políticas y funciones, está en `database/schema.sql`.
 - Un módulo nuevo se agrega en `planModules` (`lib/plans.js`), en la restricción `plans_modules_valid` y en `admin_update_plan`. Las rutas del panel se asocian al módulo por su segundo segmento (`/employer/<módulo>`).
 - `main.jsx` redirige las rutas viejas en castellano (`/empleador/...`, `/empleado/...`, `/precios`, `/nueva-contrasena`, etc.) a las nuevas, porque las notificaciones guardadas en la base y los correos ya enviados las usan.
 
+
+## Jerarquía de la empresa
+
+Dentro de cada organización conviven dos niveles de gestión. El administrador del sistema no cambia.
+
+| Usuario | Rol en la base | Lo crea | Alcance | Puede crear |
+| --- | --- | --- | --- | --- |
+| Administrador | `system_admins` | Se da de alta desde el SQL Editor | Toda la plataforma | Empresas con su cuenta Empresa |
+| Empresa | `company` | El administrador | Toda su organización | Encargados y empleados |
+| Encargado | `manager` | La Empresa | Solo su sucursal | Empleados de su sucursal |
+| Empleado | `employee` | La Empresa o su Encargado | Sus propios datos | — |
+
+- El Encargado se define por su puesto: un puesto con `job_positions.is_manager` en verdadero convierte en Encargado a quienes lo ocupan. Al cambiar el puesto de un empleado o el flag del puesto, los disparadores `employees_sync_account_role` y `job_positions_sync_roles` ajustan el rol de la cuenta.
+- La sucursal del Encargado sale de su propia ficha de empleado (`private.current_branch_id()`). Las políticas de las tablas operativas comparan contra `private.employee_branch(employee_id)`, así que el recorte lo hace la base y no la interfaz.
+- Solo la Empresa modifica reglas de negocio, puestos, áreas, sucursales, tipos de turno y tramos de vacaciones. El Encargado los lee para operar.
+- La cuenta Empresa no tiene ficha de empleado: su nombre visible es fijo y no usa foto de perfil. El disparador `user_accounts_lock_company_profile` lo garantiza aunque la petición llegue por fuera de la interfaz. Solo cambia su email y su contraseña.
+- Las solicitudes de franco y vacaciones notifican a la Empresa y al Encargado de la sucursal del empleado (`private.notify_supervisors`).
+- En las funciones de la base, `private.is_company()`, `private.is_manager()` y `private.is_staff()` distinguen quién llama, y `private.in_scope(employee_id)` resuelve si el empleado entra en su alcance. `private.is_employer()` quedó como alias de `is_staff()` por compatibilidad.

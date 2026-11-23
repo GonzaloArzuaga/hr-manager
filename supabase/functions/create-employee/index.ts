@@ -1,12 +1,17 @@
-// Función de servidor: alta de un empleado con su cuenta de acceso (RF-02, RF-07, RNF-08).
+// Función de servidor: alta de un empleado o un encargado con su cuenta de
+// acceso (RF-02, RF-07, RNF-08).
 //
 // Crear un usuario en Supabase Auth requiere la clave de servicio, que nunca
 // puede estar en el navegador. Por eso el alta pasa por esta función:
-//   1. Verifica que quien la llama tenga sesión y sea empleador.
+//   1. Verifica que quien la llama tenga sesión y sea Empresa o Encargado.
+//      El Encargado solo da de alta empleados de su propia sucursal.
 //   2. Valida los datos y la política de contraseñas (RNF-03).
 //   3. Crea el usuario en Auth con la contraseña provisoria.
 //   4. Crea la ficha del empleado y su cuenta en una sola transacción.
 //      Si algo falla, borra el usuario recién creado para no dejar restos.
+//
+// El rol de la cuenta lo decide el puesto: si está habilitado como Encargado,
+// la cuenta nace con rol 'manager'. Esa resolución vive en admin_create_employee.
 //
 // Despliegue: supabase functions deploy create-employee
 
@@ -66,11 +71,11 @@ Deno.serve(async (req) => {
 
   const { data: account } = await userClient
     .from("user_accounts")
-    .select("company_id, role, is_active")
+    .select("company_id, role, is_active, employee_id")
     .eq("auth_user_id", userData.user.id)
     .maybeSingle();
-  if (!account || account.role !== "employer" || !account.is_active) {
-    return json({ error: "Solo el empleador puede dar de alta empleados." }, 403);
+  if (!account || !account.is_active || !["company", "manager"].includes(account.role)) {
+    return json({ error: "Solo la empresa o un encargado pueden dar de alta personal." }, 403);
   }
 
   // 2. Validación de datos
@@ -95,8 +100,33 @@ Deno.serve(async (req) => {
   const problems = passwordProblems(password);
   if (problems.length) return json({ error: `La contraseña provisoria debe ${problems.join(" y ")}.` }, 400);
 
-  // 3. Usuario en Supabase Auth
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+
+  // 3. Límites del encargado: su sucursal y solo cuentas de empleado
+  const branchName = body.branch.trim();
+  const positionName = body.jobPosition.trim();
+  if (account.role === "manager") {
+    const { data: own } = await admin
+      .from("employees")
+      .select("branches(name)")
+      .eq("id", account.employee_id)
+      .maybeSingle();
+    const ownBranch = (own?.branches as { name?: string } | null)?.name ?? "";
+    if (ownBranch.toLocaleLowerCase("es") !== branchName.toLocaleLowerCase("es")) {
+      return json({ error: "Solo podés dar de alta empleados de tu sucursal." }, 403);
+    }
+    const { data: position } = await admin
+      .from("job_positions")
+      .select("is_manager")
+      .eq("company_id", account.company_id)
+      .ilike("name", positionName)
+      .maybeSingle();
+    if (position?.is_manager) {
+      return json({ error: "Solo la empresa puede dar de alta encargados." }, 403);
+    }
+  }
+
+  // 4. Usuario en Supabase Auth
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email,
     password,
@@ -109,7 +139,7 @@ Deno.serve(async (req) => {
     return json({ error: message }, 400);
   }
 
-  // 4. Ficha del empleado y cuenta, en una sola transacción
+  // 5. Ficha del empleado y cuenta, en una sola transacción
   const { data: employee, error: employeeError } = await admin.rpc("admin_create_employee", {
     p_company_id: account.company_id,
     p_auth_user_id: created.user.id,

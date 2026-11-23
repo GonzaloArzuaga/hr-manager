@@ -33,6 +33,9 @@ const initialForm = {
   birthDate: "",
   hireDate: "",
 };
+
+// El Encargado trabaja sobre una única sucursal: la suya viene fijada.
+const newEmployeeForm = () => ({ ...initialForm, branch: store.isManager ? store.branch?.name ?? "" : "" });
 function Icon({ children, className = "h-4 w-4" }) {
   return (
     <svg
@@ -183,7 +186,7 @@ function EditEmployeeDialog({ employee, roleOptions, departmentOptions, branchOp
 
 export default function EmpleadosEmployer() {
   const [employees, setEmployees] = useState(empleadosData.employees);
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(newEmployeeForm);
   const [activeTab, setActiveTab] = useState("Todos");
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("");
@@ -217,8 +220,18 @@ export default function EmpleadosEmployer() {
       ...employees.map((employee) => employee.department),
     ]),
   ].filter(Boolean).sort();
-  const roleOptions = [...new Set([...empleadosData.roles, ...employees.map((e) => e.role)])].filter(Boolean).sort();
-  const branchOptions = [...new Set([...empleadosData.branches, ...employees.map((e) => e.branch)])].filter(Boolean).sort();
+  // El Encargado solo da de alta empleados de su sucursal y nunca otros
+  // encargados: su lista de puestos excluye los habilitados como Encargado.
+  const managerPositions = new Set(
+    (store.raw?.jobPositions ?? []).filter((position) => position.is_manager).map((position) => position.name),
+  );
+  const roleOptions = [...new Set([...empleadosData.roles, ...employees.map((e) => e.role)])]
+    .filter(Boolean)
+    .filter((role) => !store.isManager || !managerPositions.has(role))
+    .sort();
+  const branchOptions = store.isManager
+    ? [store.branch?.name].filter(Boolean)
+    : [...new Set([...empleadosData.branches, ...employees.map((e) => e.branch)])].filter(Boolean).sort();
 
   const visibleEmployees = useMemo(() => {
     const normalizedSearch = normalize(search.trim());
@@ -254,7 +267,7 @@ export default function EmpleadosEmployer() {
   }
 
   function clearForm() {
-    setForm(initialForm);
+    setForm(newEmployeeForm());
     setShowPassword(true);
     setMessage("");
   }
@@ -290,7 +303,7 @@ export default function EmpleadosEmployer() {
       setDepartment("");
       setSearch("");
       const name = form.name.trim();
-      setForm(initialForm);
+      setForm(newEmployeeForm());
       setMessage(
         `${name} fue dado de alta. Entregale su contraseña provisoria (${password}); deberá cambiarla en su primer ingreso.`,
       );

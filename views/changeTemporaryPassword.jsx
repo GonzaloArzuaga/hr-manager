@@ -11,7 +11,7 @@ export default function ChangeTemporaryPassword() {
 
   async function handleSubmit(password) {
     await updatePassword(password);
-    window.location.assign(store.account?.role === "employer" ? "/employer" : "/employee");
+    window.location.assign(store.account?.role === "employee" ? "/employee" : "/employer");
   }
 
   return (

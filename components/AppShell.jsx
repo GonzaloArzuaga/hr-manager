@@ -9,7 +9,7 @@ import NotificationBell from "./NotificationBell";
 // superior como un cajón.
 export default function AppShell({ path, loading, children }) {
   const [open, setOpen] = useState(false);
-  const role = store.role ?? (store.isEmployer ? "employer" : "employee");
+  const role = store.panelRole ?? (store.isEmployer ? "employer" : "employee");
   const current = navigationItems.find(
     (item) => item[role] === path || (item.aliases ?? []).includes(path),
   );

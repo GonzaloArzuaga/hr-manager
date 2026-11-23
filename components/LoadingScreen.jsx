@@ -8,6 +8,7 @@ import {
   VacacionesEmployeeSkeleton,
 } from "./skeleton/empleado";
 import { ConfigurationParticipantSkeleton } from "./skeleton/participante";
+import { store } from "../lib/store";
 
 // Pantallas de carga. En lugar de un texto "Cargando…" se muestra la forma de la
 // pantalla que viene (menú, encabezado, tarjetas y tabla) mientras llegan los datos.
@@ -148,7 +149,7 @@ function SkeletonPart({ kind, count, rows }) {
 // Contenido de una sección del panel, con la forma de la pantalla que se está abriendo
 export function PageSkeleton({ path }) {
   if (path === "/employer/configuration" || path === "/configuracion") {
-    return <ConfigurationParticipantSkeleton isEmployer />;
+    return <ConfigurationParticipantSkeleton isEmployer={store.isCompany} />;
   }
   if (path === "/employee/configuration") {
     return <ConfigurationParticipantSkeleton />;

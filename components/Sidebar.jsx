@@ -121,7 +121,7 @@ export function UserAvatar({ className = "h-6 w-6 text-[0.5625rem]" }) {
 // izquierda; en tablet y celular se muestra como cajón desplegable
 // (variant="drawer") desde la barra superior.
 export default function Sidebar({ activePath = "", variant = "desktop", onClose }) {
-  const role = store.role ?? (store.isEmployer ? "employer" : "employee");
+  const role = store.panelRole ?? (store.isEmployer ? "employer" : "employee");
   const items = navigationItems.filter(
     (item) => item[role] && item.label !== "Configuración" && hasModule(moduleForPath(item[role])),
   );

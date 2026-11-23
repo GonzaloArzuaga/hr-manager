@@ -83,11 +83,11 @@ Deno.serve(async (req) => {
       .from("user_accounts")
       .select("id, auth_user_id, email")
       .eq("company_id", companyId)
-      .eq("role", "employer")
+      .eq("role", "company")
       .order("id")
       .limit(1)
       .maybeSingle();
-    if (!account) return json({ error: "La empresa no tiene empleador." }, 404);
+    if (!account) return json({ error: "La empresa no tiene una cuenta Empresa." }, 404);
 
     const password = generatePassword();
     const { error } = await admin.auth.admin.updateUserById(account.auth_user_id, { password });
