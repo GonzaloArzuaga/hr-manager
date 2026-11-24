@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { supabase } from "./lib/supabaseClient";
@@ -18,6 +18,8 @@ const publicViews = {
   "/home": () => import("./views/landing"),
   "/about": () => import("./views/about"),
   "/price": () => import("./views/price"),
+  "/privacidad": () => import("./views/privacy"),
+  "/cookies": () => import("./views/cookies"),
   "/login": () => import("./views/login"),
   "/login/recover": () => import("./views/recoverPassword"),
   "/login/change-password": () => import("./views/newPassword"),
@@ -131,6 +133,12 @@ function isKnownPath(path) {
   );
 }
 
+// Pantallas que requieren sesión. Al salir de ellas hacia una pública (con un
+// enlace o con el botón Atrás), la sesión se cierra.
+function isPrivatePath(path) {
+  return isKnownPath(path) && !publicViews[path] && !legacyTarget(path);
+}
+
 async function resolveRoute(path) {
   const legacy = legacyTarget(path);
   if (legacy) return { redirect: `${legacy}${window.location.search}${window.location.hash}` };
@@ -211,6 +219,7 @@ function App() {
   const path = usePath();
   const [state, setState] = useState({ status: "loading" });
   const [pending, setPending] = useState(false);
+  const lastPathRef = useRef(null);
 
   // Los enlaces internos cambian de sección sin recargar la página
   useEffect(() => interceptLinks(isKnownPath), []);
@@ -222,7 +231,17 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     setPending(true);
-    resolveRoute(path)
+    const previousPath = lastPathRef.current;
+    // Las rutas viejas solo redirigen: no cuentan como salir del panel
+    if (!legacyTarget(path)) lastPathRef.current = path;
+    const leavingPanel =
+      previousPath && isPrivatePath(previousPath) && !legacyTarget(path) && !isPrivatePath(path);
+    // Se espera el cierre antes de resolver la ruta, para que /login no devuelva al panel
+    const signOutFirst = leavingPanel
+      ? supabase.auth.signOut({ scope: "local" }).catch(() => {})
+      : Promise.resolve();
+    signOutFirst
+      .then(() => resolveRoute(path))
       .then(async (route) => {
         if (cancelled) return;
         if (route.redirect) {

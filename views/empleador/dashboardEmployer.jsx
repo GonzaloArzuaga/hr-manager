@@ -10,6 +10,7 @@ import { resolveDaysOff, resolveVacation } from "../../lib/api";
 import DashboardMetricCard from "../../components/cards/empleador/DashboardMetricCard";
 import { dashboardData } from "../../data/dashboardData";
 import { getEmployeeById } from "../../data/employeeDirectory";
+import { store } from "../../lib/store";
 
 const metricIcons = {
   employees: (
@@ -153,7 +154,7 @@ export default function DashboardEmployer() {
               Operaciones &amp; RRHH
             </span>
             <h1 className="text-2xl font-extrabold leading-none tracking-tight text-slate-900">
-              Hola, {user.name.split(" ")[0]}
+              {store.isCompany ? "¡Bienvenido nuevamente!" : `Hola, ${user.name.split(" ")[0]}`}
             </h1>
             <p className="text-[0.625rem] font-normal text-slate-500">
               Panel de control de Operaciones y Recursos Humanos •{" "}

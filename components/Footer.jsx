@@ -2,8 +2,8 @@ import React from "react";
 
 const defaultLinks = [
   // { href: "/aviso-legal", label: "Aviso legal" },
-  // { href: "/privacidad", label: "Privacidad" },
-  // { href: "/cookies", label: "Cookies" },
+  { href: "/privacidad", label: "Privacidad" },
+  { href: "/cookies", label: "Cookies" },
 ];
 
 export default function Footer({
@@ -27,15 +27,18 @@ export default function Footer({
         <p className="text-center">
           © {year} HRManager. Todos los derechos reservados.
         </p>
-        <div className="flex items-center gap-5">
-          {links.map(({ href, label }) => (
-            <a
-              className="transition-colors hover:text-blue-700"
-              href={href}
-              key={label}
-            >
-              {label}
-            </a>
+        <div className="flex items-center gap-2">
+          {links.map(({ href, label }, index) => (
+            <React.Fragment key={label}>
+              {index > 0 && (
+                <span aria-hidden="true" className="text-slate-400">
+                  |
+                </span>
+              )}
+              <a className="transition-colors hover:text-blue-700" href={href}>
+                {label}
+              </a>
+            </React.Fragment>
           ))}
         </div>
       </div>

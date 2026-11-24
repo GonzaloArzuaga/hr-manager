@@ -21,7 +21,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 ## Arquitectura y organización del código
 
 - `main.jsx` es la fuente de verdad de las rutas. Resuelve sesión, rol, estado de la cuenta y cambio obligatorio de contraseña antes de cargar una vista privada. Las rutas públicas, de empleador, empleado y administrador se mantienen separadas; las rutas privadas de otro rol redirigen al inicio propio.
-- `lib/supabaseClient.js`: cliente de Supabase y traducción de errores.
+- `lib/supabaseClient.js`: cliente de Supabase (sesión en `sessionStorage`, con clave por pestaña) y traducción de errores.
 - `lib/store.js`: lee los datos que el usuario puede ver (RLS mediante) y los deja con la forma que esperan las vistas dentro de los objetos de `data/`.
 - `lib/api.js`: operaciones de escritura y autenticación. Mantener las escrituras de las vistas detrás de esta capa; después de las operaciones de datos se vuelve a cargar el store.
 - `lib/format.js`: fechas, períodos y formatos compartidos.
@@ -33,7 +33,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 - `lib/workforce.js`: qué le toca a cada empleado cada día (turno, franco, vacaciones) y fichajes; lo usan Estadísticas y Fichajes.
 - Gráficos: `components/ChartCanvas.jsx` (Chart.js). Fichajes del empleador: RPC `register_attendance`; las bajas de fichajes van directo a la tabla (RLS del empleador).
 - `views/` contiene una vista por página, agrupada por área:
-  - `views/`: páginas públicas y de acceso (`capchat.jsx`, `landing.jsx`, `about.jsx`, `price.jsx`, `login.jsx`, `recoverPassword.jsx`, `newPassword.jsx`, `changeTemporaryPassword.jsx` y `error404.jsx`).
+  - `views/`: páginas públicas y de acceso (`capchat.jsx`, `landing.jsx`, `about.jsx`, `price.jsx`, `privacy.jsx`, `cookies.jsx` (estas dos usan `components/LegalPage.jsx`), `login.jsx`, `recoverPassword.jsx`, `newPassword.jsx`, `changeTemporaryPassword.jsx` y `error404.jsx`).
   - `views/admin/`: inicio, gestión de empresas, solicitudes de demostración y configuración del administrador del sistema.
   - `views/empleador/`: panel, empleados, horarios, francos, vacaciones, sueldos, estadísticas y fichajes.
   - `views/empleado/`: panel personal, horarios, francos, vacaciones y sueldos.
@@ -56,6 +56,8 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 | `/home` | Página de inicio |
 | `/about` | Información institucional |
 | `/price` | Planes y precios |
+| `/privacidad` | Política de privacidad |
+| `/cookies` | Política de cookies |
 | `/login` | Inicio de sesión |
 | `/login/recover` | Recuperación de contraseña |
 | `/login/change-password` | Definir una contraseña nueva desde el enlace de recuperación |
@@ -78,7 +80,7 @@ La lógica de negocio importante vive en la base de datos: políticas de segurid
 | `/admin` | Panel del administrador del sistema |
 | `/admin/empresas` | Empresas, planes y estado de las cuentas |
 | `/admin/solicitudes` | Solicitudes de demostración |
-| `/admin/configuracion` | Configuración del administrador y planes |
+| `/admin/configuration` | Configuración del administrador y planes (`/admin/configuracion` redirige acá) |
 | `/configuracion` | Alias de configuración del empleador |
 
 Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz esté en español. La Empresa y el Encargado comparten las rutas de `/employer`; lo que cambia es el alcance de los datos, que impone la base. `/configuracion` es alias de ese panel. El empleado no ve la gestión de empleados, fichajes ni estadísticas. La configuración se comparte visualmente, pero su contenido depende del tipo de usuario: solo la Empresa ve las reglas de negocio y la estructura de la empresa, y solo ella no tiene foto de perfil. Ninguna ruta constituye por sí sola una barrera de autorización real.
@@ -122,6 +124,8 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 ## Componentes compartidos y roles
 
 - Usar `Navbar.jsx` y `Footer.jsx` en páginas públicas y de acceso que ya los incorporan. Evitar layouts alternativos innecesarios.
+- `Footer` muestra por defecto «Privacidad | Cookies» a la derecha; el separador `|` se agrega solo entre enlaces y está oculto para lectores de pantalla.
+- Las páginas legales (`/privacidad`, `/cookies`) se arman con `components/LegalPage.jsx` pasando título, introducción, fecha de actualización y secciones. La página de cookies lista solo lo que el sistema guarda de verdad (hoy, sin cookies: la sesión y el identificador de pestaña en `sessionStorage`); si se agrega almacenamiento en el navegador, analítica o un servicio que deje cookies (por ejemplo, videos de YouTube en `data/demoVideos.js`), actualizar esa página y su fecha.
 - `Navbar` permite configurar enlaces y acción con props; el espacio de acción mantiene ancho fijo para que textos como «Volver» no desplacen el menú.
 - `Sidebar.jsx` obtiene el panel de `store.panelRole`. El empleado ve Inicio, Horarios, Francos, Vacaciones, Sueldos y Configuración; no ve Empleados, Fichajes ni Estadísticas. Sus enlaces llevan a rutas bajo `/employee`.
 - Mantener ambos roles funcionando al cambiar Sidebar o configuración.
@@ -135,6 +139,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 - `views/login.jsx` inicia sesión con Supabase Auth. Las cuentas no se registran solas: el administrador del sistema crea la empresa y su cuenta Empresa, la Empresa crea encargados y empleados, y el Encargado solo crea empleados de su sucursal.
 - Si `user_accounts.must_change_password` es verdadero, `main.jsx` solo permite `/login/change-temporary-password` (RF-03).
 - `/login/recover` envía el enlace de recuperación y `/login/change-password` lo recibe (RF-08, RNF-11). Política de contraseñas: 8 caracteres y un carácter especial (RNF-03), validada en `lib/api.js`.
+- La sesión se guarda en `sessionStorage` con una clave propia de cada pestaña (`lib/supabaseClient.js`), así que se cierra al cerrar la pestaña o el navegador. Además, `main.jsx` la cierra (`signOut({ scope: "local" })`) al pasar de una pantalla privada a una pública, con un enlace o con el botón Atrás, y espera ese cierre antes de resolver la ruta para que `/login` no devuelva al panel. `isPrivatePath` deriva de los mapas de vistas, así que una ruta privada nueva queda cubierta al registrarla. No volver a guardar la sesión en `localStorage`.
 - Una cuenta dada de baja (`is_active = false`) no puede usar el sistema.
 - Una empresa suspendida bloquea el acceso a sus cuentas; el administrador puede reactivarla desde `/admin/empresas`.
 
@@ -164,7 +169,7 @@ Las rutas de panel usan `/employer` y `/employee` aunque el texto de interfaz es
 
 ### Base de datos
 
-El esquema completo, con políticas y funciones, está en `database/schema.sql`. Los datos de prueba están en `database/seed_prueba.sql` y un año completo de datos de demostración en `database/datos_demo_anual.sql`. Para proyectos existentes, aplicar en orden `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql` y `database/actualizacion_v3_jerarquia.sql`; los cambios también se integran en `schema.sql`. `database/datos_demo_jerarquia.sql` agrega datos de demostración de la jerarquía: dos sucursales y una cuenta de Encargado.
+El esquema completo, con políticas y funciones, está en `database/schema.sql`. Los datos de prueba están en `database/seed_prueba.sql` y un año completo de datos de demostración en `database/datos_demo_anual.sql`. Para proyectos existentes, aplicar en orden `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql`, `database/actualizacion_v2_planes.sql`, `database/actualizacion_v2_1.sql`, `database/actualizacion_v2_2.sql` y `database/actualizacion_v3_jerarquia.sql`; los cambios también se integran en `schema.sql`. `database/datos_demo_jerarquia.sql` agrega datos de demostración de la jerarquía: dos sucursales y una cuenta de Encargado.
 
 ## Accesibilidad y calidad
 

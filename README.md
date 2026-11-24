@@ -25,7 +25,7 @@ insert into public.system_admins (auth_user_id, display_name)
 select id, 'Nombre del administrador' from auth.users where email = 'email@admin.com';
 ```
 
-Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql` `database/actualizacion_v2_planes.sql`, `database/actualizacion_v2_1.sql`, `database/actualizacion_v2_2.sql` y `database/actualizacion_v3_jerarquia.sql`.
+Si el proyecto ya tenía una versión anterior del schema, en lugar de borrar todo alcanza con ejecutar, en orden, `database/actualizacion_fichajes.sql`, `database/actualizacion_admin_notificaciones.sql`, `database/actualizacion_planes_perfil_fichadas.sql`, `database/actualizacion_modulos_demos.sql`, `database/actualizacion_resultado_solicitudes.sql`, `database/actualizacion_v2_planes.sql`, `database/actualizacion_v2_1.sql`, `database/actualizacion_v2_2.sql` y `database/actualizacion_v3_jerarquia.sql`.
 
 La última, `actualizacion_v3_jerarquia.sql`, incorpora la jerarquía de la empresa: reemplaza el único usuario Empleador por la cuenta **Empresa**, que administra toda la organización y es la única que configura el negocio, y la cuenta **Encargado**, que gestiona únicamente a los empleados de su sucursal. El Encargado se define por su puesto: en Configuración, la Empresa marca qué puestos lo habilitan. Las cuentas con rol `employer` pasan automáticamente a `company`.
 
@@ -82,6 +82,8 @@ Para compilar: `npm run build` y `npm run preview`.
 | `/home` | Página de inicio |
 | `/about` | Información institucional |
 | `/price` | Planes y precios |
+| `/privacidad` | Política de privacidad |
+| `/cookies` | Política de cookies: qué guarda el sistema en el navegador |
 | `/login` | Inicio de sesión |
 | `/login/recover` | Pedido del enlace de recuperación de contraseña |
 | `/login/change-password` | Destino del enlace de recuperación: definir una nueva contraseña |
@@ -106,9 +108,16 @@ Para compilar: `npm run build` y `npm run preview`.
 | `/admin` | Administrador del sistema: tablero con empresas, empleados, facturación y planes |
 | `/admin/empresas` | Alta, plan, suspensión y contraseñas de las empresas |
 | `/admin/solicitudes` | Solicitudes de demostración que llegan desde Precios: seguimiento y alta de la empresa |
-| `/admin/configuracion` | Precios y límites de los planes, nombre y contraseña del administrador |
+| `/admin/configuration` | Precios y límites de los planes, nombre y contraseña del administrador (`/admin/configuracion` redirige acá) |
 
 `main.jsx` exige sesión en las rutas privadas y separa las del administrador, empleador y empleado. La autorización real la hacen las políticas RLS de la base: aunque alguien fuerce una ruta, solo recibe los datos que su rol y su empresa le permiten.
+
+### Duración de la sesión
+
+- La sesión se guarda en el almacenamiento de la pestaña (`sessionStorage`), con una clave propia de cada pestaña (`lib/supabaseClient.js`). Se borra al cerrar la pestaña o el navegador, y abrir el sistema en una pestaña nueva pide iniciar sesión otra vez.
+- Al pasar de una pantalla privada (`/employer`, `/employee`, `/admin`, `/configuracion` o el cambio de contraseña provisoria) a una pública, ya sea con un enlace o con el botón Atrás, `main.jsx` cierra la sesión antes de mostrar la pantalla nueva. Moverse entre secciones del panel no la cierra.
+- Se cierra solo la sesión de esa pestaña (`signOut({ scope: "local" })`); el botón «Cerrar sesión» del menú las cierra todas.
+- No se cubre el caso de salir a otro sitio con Atrás y volver con Adelante, ni el de un navegador configurado para restaurar las pestañas al abrirse: en ambos la sesión sigue guardada.
 
 ## Distribución de archivos
 
@@ -142,6 +151,16 @@ Para compilar: `npm run build` y `npm run preview`.
 - `lib/api.js`: alta de empleados, horarios, solicitudes, respuestas, sueldos y recibos, fichaje, reglas y contraseñas. Después de cada operación vuelve a cargar los datos.
 - `lib/router.js`: navegación sin recarga. Los enlaces internos cambian la dirección con la History API y solo se reemplaza el contenido; los botones Atrás y Adelante del navegador funcionan.
 - `components/AppShell.jsx`: marco de las pantallas con sesión. El menú lateral queda montado; en pantallas de menos de 1024 px se abre como cajón desde la barra superior.
+- `lib/supabaseClient.js`: cliente de Supabase, con la sesión guardada por pestaña, y traducción de errores.
+- `components/Footer.jsx`: pie de las páginas públicas, con los enlaces «Privacidad | Cookies» a la derecha.
+
+### Privacidad y cookies
+
+`/privacidad` (`views/privacy.jsx`) y `/cookies` (`views/cookies.jsx`) son páginas públicas que comparten el diseño de `components/LegalPage.jsx`: cada una es una lista de secciones con título, párrafos y viñetas.
+
+- La página de cookies menciona solo lo que el sistema guarda de verdad: hoy no hay cookies, y en `sessionStorage` solo están la sesión de usuario y el identificador de pestaña. Si se agrega cualquier otro almacenamiento, analítica o un servicio que deje cookies (por ejemplo, videos de YouTube), hay que sumarlo a esa página.
+- Las dos páginas tienen la fecha de «Última actualización» escrita en el archivo; cambiarla al modificar el texto.
+- El texto es un borrador y conviene que lo revise un abogado antes de publicarlo.
 
 ### Imágenes públicas
 
@@ -163,7 +182,7 @@ Los archivos locales `data/roberto-morales.png` y `data/valeria-rossi.png` perma
 
 ### Planes
 
-- Los planes están en la tabla `plans`. El código no cambia; el nombre, el precio, el máximo de empleados y los módulos los edita el administrador desde `/admin/configuracion`:
+- Los planes están en la tabla `plans`. El código no cambia; el nombre, el precio, el máximo de empleados y los módulos los edita el administrador desde `/admin/configuration`:
 
   | Código (`plan_code`) | Nombre inicial | Precio | Empleados | Módulos opcionales |
   | --- | --- | --- | --- | --- |
@@ -198,7 +217,7 @@ El empleador (al asignar) y el empleado (al solicitar) eligen las vacaciones con
 
 ### Videos de la demostración
 
-Los enlaces están en `data/demoVideos.js` y apuntan al bucket `videosAbout` de Supabase. Cada reproducción consume tráfico del plan gratuito (5 GB por mes); si alguna vez se acerca al límite, se pueden reemplazar por enlaces de YouTube "No listado", que el reproductor ya admite. Mientras el video carga se muestra un aviso sobre el reproductor. Al abrir una página pública se prepara el reproductor (`preloadDemoVideos` de `lib/demoVideos.js`); los MP4 no se descargan por adelantado para no gastar ese tráfico.
+Los enlaces están en `data/demoVideos.js` y apuntan al bucket `videosAbout` de Supabase. Cada reproducción consume tráfico del plan gratuito (5 GB por mes); si alguna vez se acerca al límite, se pueden reemplazar por enlaces de YouTube "No listado", que el reproductor ya admite (en ese caso, el reproductor de YouTube deja sus propias cookies y hay que mencionarlas en `/cookies`). Mientras el video carga se muestra un aviso sobre el reproductor. Al abrir una página pública se prepara el reproductor (`preloadDemoVideos` de `lib/demoVideos.js`); los MP4 no se descargan por adelantado para no gastar ese tráfico.
 
 ### Estructura de la empresa
 
@@ -262,6 +281,7 @@ Los paneles no usan el desplegable del navegador. `components/Select.jsx` se usa
 - Cada empresa ve solo sus datos: todas las tablas tienen políticas RLS y las claves foráneas incluyen la empresa.
 - El empleador administra los datos de su empresa; el empleado ve solo los propios. Un empleado no puede ver los sueldos ni los recibos de otro.
 - Las contraseñas las maneja Supabase Auth. La base no guarda contraseñas.
+- La sesión dura lo que la pestaña y se cierra al salir de las pantallas privadas (ver «Duración de la sesión»).
 - La clave de servicio solo existe en las funciones de servidor.
 - Una empresa suspendida por el administrador conserva sus datos, pero ninguna de sus cuentas puede ingresar ni operar.
 - Las notificaciones las crea la base con disparadores; cada usuario solo puede leer las suyas y marcarlas como leídas.
