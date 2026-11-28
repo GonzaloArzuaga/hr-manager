@@ -41,8 +41,12 @@ Deno.serve(async (req) => {
     const legalName = String(body.legalName ?? "").trim();
     const employerName = String(body.employerName ?? "").trim();
     const email = String(body.employerEmail ?? "").trim().toLowerCase();
+    // El CUIT es opcional, pero si se carga habilita a la cuenta Empresa a
+    // ingresar con él, igual que el empleado con su CUIL.
+    const taxId = String(body.taxId ?? "").replace(/\D/g, "");
     if (!legalName || !employerName || !email) return json({ error: "Completá todos los campos obligatorios." }, 400);
     if (!isEmail(email)) return json({ error: "El email no es válido." }, 400);
+    if (taxId && taxId.length !== 11) return json({ error: "El CUIT debe tener 11 dígitos." }, 400);
 
     const { data: existing } = await admin.from("companies").select("id").ilike("legal_name", legalName).maybeSingle();
     if (existing) return json({ error: "Ya existe una empresa con esa razón social." }, 400);
@@ -62,6 +66,7 @@ Deno.serve(async (req) => {
       p_legal_name: legalName,
       p_employer_email: email,
       p_employer_name: employerName,
+      p_tax_id: taxId || null,
     });
     if (companyError) {
       await admin.auth.admin.deleteUser(created.user.id);

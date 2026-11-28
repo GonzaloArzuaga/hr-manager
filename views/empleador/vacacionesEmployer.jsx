@@ -203,10 +203,16 @@ export default function VacacionesEmployer() {
       ? Math.max(0, remainingBeforeSelection - computedDays)
       : remainingBeforeSelection;
   const accrualPeriods = getAccrualPeriods();
-  // Las fechas no tienen límite de año: solo no pueden empezar antes de hoy.
+  // Las fechas no tienen límite de año, pero el aviso previo de vacaciones
+  // rige igual para la asignación directa que para la solicitud del empleado.
   // El calendario abre en el año del período elegido para que sea más cómodo.
   const todayValue = getLocalDateValue(new Date());
-  const periodStart = todayValue;
+  const earliestStart = (() => {
+    const date = new Date();
+    date.setDate(date.getDate() + businessRules.vacationNotice);
+    return getLocalDateValue(date);
+  })();
+  const periodStart = earliestStart;
   const periodOpenAt = periodYear && `${periodYear}-01-01` > todayValue ? `${periodYear}-01-01` : todayValue;
   const exceedsBalance = computedDays > remainingBeforeSelection;
 

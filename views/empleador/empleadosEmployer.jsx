@@ -10,6 +10,7 @@ import ActiveStaffingCard from "../../components/cards/empleador/ActiveStaffingC
 import AverageTenureCard from "../../components/cards/empleador/AverageTenureCard";
 import DepartmentDistributionCard from "../../components/cards/empleador/DepartmentDistributionCard";
 import { empleadosData } from "../../data/empleadosData";
+import { MIN_HIRING_AGE, hasMinimumHiringAge } from "../../data/legal";
 import { usePagination } from "../../hooks/usePagination";
 import { createEmployee, setEmployeeStatus, updateEmployee } from "../../lib/api";
 import { store } from "../../lib/store";
@@ -100,8 +101,10 @@ function EditEmployeeDialog({ employee, roleOptions, departmentOptions, branchOp
       setError("El CUIL debe tener 11 dígitos.");
       return;
     }
-    if (form.hireDate < form.birthDate) {
-      setError("La fecha de ingreso no puede ser anterior a la fecha de nacimiento.");
+    if (!hasMinimumHiringAge(form.birthDate, form.hireDate)) {
+      setError(
+        `El empleado debe tener ${MIN_HIRING_AGE} años cumplidos a su fecha de ingreso.`,
+      );
       return;
     }
     setSaving(true);
@@ -284,8 +287,10 @@ export default function EmpleadosEmployer() {
       setMessage("Ingresá un CUIL con el formato XX-XXXXXXXX-X.");
       return;
     }
-    if (form.hireDate < form.birthDate) {
-      setMessage("La fecha de ingreso no puede ser anterior a la fecha de nacimiento.");
+    if (!hasMinimumHiringAge(form.birthDate, form.hireDate)) {
+      setMessage(
+        `El empleado debe tener ${MIN_HIRING_AGE} años cumplidos a su fecha de ingreso.`,
+      );
       return;
     }
     const password = form.password;
@@ -498,7 +503,6 @@ export default function EmpleadosEmployer() {
                   Fecha de Ingreso <span aria-hidden="true" className="text-red-600">*</span>
                   <DateField
                     className={inputClasses()}
-                    max={new Date().toISOString().slice(0, 10)}
                     name="hireDate"
                     onChange={handleChange}
                     required

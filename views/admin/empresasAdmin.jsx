@@ -34,7 +34,7 @@ function Icon({ children, className = "h-4 w-4" }) {
 const inputClassName =
   "w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-[0.5625rem] focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500";
 const labelClassName = "mb-1 block text-[0.6875rem] font-semibold text-slate-700";
-const emptyForm = { legalName: "", employerName: "", employerEmail: "", password: "", planCode: "operativo" };
+const emptyForm = { legalName: "", taxId: "", employerName: "", employerEmail: "", password: "", planCode: "operativo" };
 
 function formatDate(value) {
   return value ? new Date(value).toLocaleDateString("es-AR") : "—";
@@ -294,6 +294,13 @@ export default function EmpresasAdmin() {
                     Nombre del empleador <span aria-hidden="true" className="text-red-600">*</span>
                   </label>
                   <input className={inputClassName} id="employer-name" name="employerName" onChange={updateForm} placeholder="Ej. Valeria Rossi" required value={form.employerName} />
+                </div>
+                <div>
+                  <label className={labelClassName} htmlFor="company-tax-id">CUIT</label>
+                  <input className={inputClassName} id="company-tax-id" inputMode="numeric" name="taxId" onChange={updateForm} placeholder="30711234567" value={form.taxId} />
+                  <p className="mt-1 text-[0.5625rem] leading-relaxed text-slate-500">
+                    Opcional, sin guiones. Si lo cargás, la cuenta Empresa puede ingresar con el CUIT además de con su correo.
+                  </p>
                 </div>
                 <div>
                   <label className={labelClassName} htmlFor="employer-email">

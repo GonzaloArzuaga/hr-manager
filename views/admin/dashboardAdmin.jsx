@@ -4,6 +4,7 @@ import DashboardAdminSkeleton from "../../components/skeleton/admin/DashboardAdm
 import { adminDashboard, countPendingDemoRequests } from "../../lib/api";
 import { store } from "../../lib/store";
 import { monthShort } from "../../lib/workforce";
+import HolidaySyncCard from "../../components/cards/admin/HolidaySyncCard";
 
 function MetricCard({ title, value, note, href, highlight = false }) {
   const content = (
@@ -227,6 +228,8 @@ export default function DashboardAdmin() {
                   </ul>
                 </Card>
               </div>
+
+              <HolidaySyncCard />
             </>
           )}
         </div>

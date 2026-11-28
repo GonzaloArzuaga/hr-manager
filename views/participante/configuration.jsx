@@ -3,6 +3,7 @@ import { TimeField } from "../../components/DateTimeFields";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import { store } from "../../lib/store";
 import CompanyCatalogs from "../../components/CompanyCatalogs";
+import CompanyHolidays from "../../components/CompanyHolidays";
 import PasswordForm from "../../components/PasswordForm";
 import { CheckIcon, PlusIcon } from "../../components/icons";
 import {
@@ -16,8 +17,12 @@ import {
 } from "../../lib/api";
 import { allModuleKeys, planModules } from "../../lib/plans";
 import {
+  MIN_DAYS_OFF_NOTICE,
+  VACATION_BASE_NOTICE,
   getBusinessRules,
+  rangeLabel,
   saveBusinessRules,
+  vacationNoticeOf,
 } from "../../data/businessRules";
 import {
   getShiftTypes,
@@ -409,7 +414,7 @@ function ParticipantConfiguration({ userType = "company" }) {
   const [vacationRanges, setVacationRanges] = useState(
     () => getBusinessRules().vacationRanges,
   );
-  const [newRange, setNewRange] = useState({ from: "", to: "", days: "" });
+  const [newRange, setNewRange] = useState({ to: "", days: "" });
   const [shiftTypes, setShiftTypes] = useState(getShiftTypes);
   const [newShiftType, setNewShiftType] = useState({
     name: "",
@@ -437,8 +442,11 @@ function ParticipantConfiguration({ userType = "company" }) {
   const passwordIsValid = Object.values(passwordRequirements).every(Boolean);
 
   function updateRule(event) {
-    const { name, value } = event.target;
-    setRules((current) => ({ ...current, [name]: Number(value) }));
+    const { name, value, type } = event.target;
+    // La fecha desde la que se acumulan los francos adeudados es texto; el
+    // resto de las reglas son números.
+    const parsed = type === "date" ? value || null : Number(value);
+    setRules((current) => ({ ...current, [name]: parsed }));
     setNotice("");
   }
 
@@ -527,49 +535,37 @@ function ParticipantConfiguration({ userType = "company" }) {
     );
   }
 
+  // Los tramos se encadenan: el nuevo arranca donde termina el anterior, de
+  // modo que no puedan quedar huecos de antigüedad sin cubrir.
   async function addVacationRange(event) {
     event.preventDefault();
-    const from = Number(newRange.from);
     const to = Number(newRange.to);
     const days = Number(newRange.days);
-    const lastRange = vacationRanges[vacationRanges.length - 1];
-    const openRange = vacationRanges.find((range) => range.to === null);
+    const openRange = vacationRanges.find((range) => range.monthsTo === null);
+    const closed = vacationRanges.filter((range) => range.monthsTo !== null);
+    const from = openRange
+      ? openRange.monthsFrom
+      : closed.reduce((max, range) => Math.max(max, range.monthsTo), 0);
 
-    if (
-      !Number.isInteger(from) ||
-      !Number.isInteger(to) ||
-      !Number.isInteger(days) ||
-      from < 0 ||
-      to < from ||
-      days < 1 ||
-      (openRange ? from <= openRange.from : lastRange && from <= lastRange.to)
-    ) {
+    if (!Number.isInteger(to) || !Number.isInteger(days) || days < 1 || to <= from) {
       setNotice(
-        "Revisá el tramo: los años deben ser válidos y comenzar después del último tramo.",
+        `Revisá el tramo: el límite debe ser mayor a ${from} meses y los días, al menos uno.`,
       );
       return;
     }
 
-    const currentOpenRange = vacationRanges.find((range) => range.to === null);
     const nextRangeId = Date.now();
-    const updatedRanges = currentOpenRange
+    const updatedRanges = openRange
       ? [
-          ...vacationRanges.map((range) =>
-            range.id === currentOpenRange.id
-              ? { ...range, to: from - 1 }
-              : range,
-          ),
-          { id: nextRangeId, from, to, days },
-          {
-            id: nextRangeId + 1,
-            from: to + 1,
-            to: null,
-            days: currentOpenRange.days,
-          },
+          ...vacationRanges.filter((range) => range.id !== openRange.id),
+          { id: nextRangeId, monthsFrom: from, monthsTo: to, days },
+          { id: nextRangeId + 1, monthsFrom: to, monthsTo: null, days: openRange.days },
         ]
-      : [...vacationRanges, { id: nextRangeId, from, to, days }];
+      : [...vacationRanges, { id: nextRangeId, monthsFrom: from, monthsTo: to, days }];
+    updatedRanges.sort((a, b) => a.monthsFrom - b.monthsFrom);
+
     if (await persistRules({ ...rules, vacationRanges: updatedRanges }, "Tramo de vacaciones agregado.")) {
-      setNewRange({ from: "", to: "", days: "" });
+      setNewRange({ to: "", days: "" });
     }
   }
 
@@ -588,7 +584,7 @@ function ParticipantConfiguration({ userType = "company" }) {
     event.preventDefault();
     setEmail(savedEmail);
     setNotice(
-      "El email es tu usuario de acceso y no se modifica desde aquí. Si necesitás cambiarlo, pedíselo a tu empleador o al administrador del sistema.",
+      "Al sistema se ingresa con el CUIL, no con el email. El email es donde llega la recuperación de contraseña y no se modifica desde aquí: si necesitás cambiarlo, pedíselo a tu empleador o al administrador del sistema.",
     );
   }
 
@@ -702,7 +698,7 @@ function ParticipantConfiguration({ userType = "company" }) {
                       />
                       <FormField
                         label="Días de aviso previo para franco"
-                        min="0"
+                        min={MIN_DAYS_OFF_NOTICE}
                         name="daysOffNotice"
                         onChange={updateRule}
                         required
@@ -710,45 +706,41 @@ function ParticipantConfiguration({ userType = "company" }) {
                         value={rules.daysOffNotice}
                       />
                       <FormField
-                        label="Días de aviso previo para vacaciones"
+                        label={`Días de aviso extra para vacaciones (sobre los ${VACATION_BASE_NOTICE} de base)`}
                         min="0"
-                        name="vacationNotice"
+                        name="vacationExtraNotice"
                         onChange={updateRule}
                         required
                         type="number"
-                        value={rules.vacationNotice}
+                        value={rules.vacationExtraNotice}
                       />
                     </div>
+                    <p className="mt-2 text-[0.6875rem] leading-relaxed text-slate-500">
+                      El franco se pide y se asigna desde mañana en adelante:
+                      el mínimo es un día y no puede bajarse, porque el empleado
+                      ya está trabajando hoy. Las vacaciones se cargan con{" "}
+                      {VACATION_BASE_NOTICE} días de anticipación como base,
+                      más los que agregues acá: hoy rigen{" "}
+                      <strong>{vacationNoticeOf(rules)} días</strong>, tanto
+                      para la solicitud del empleado como para la asignación
+                      directa.
+                    </p>
                     <fieldset className="mt-5 space-y-2">
                       <legend className="mb-2 text-[0.6875rem] font-semibold text-slate-700">
-                        Aprobación de solicitudes
+                        Francos adeudados
                       </legend>
-                      <label className="flex items-center gap-2 text-[0.625rem] text-slate-700">
-                        <input
-                          checked={rules.requiresDaysOffApproval}
-                          className="rounded border-slate-300 text-blue-700 focus:ring-blue-500"
-                          onChange={(event) => {
-                            setRules((current) => ({ ...current, requiresDaysOffApproval: event.target.checked }));
-                            setNotice("");
-                          }}
-                          type="checkbox"
-                        />
-                        Los francos requieren aprobación del empleador
-                      </label>
-                      <label className="flex items-center gap-2 text-[0.625rem] text-slate-700">
-                        <input
-                          checked={rules.requiresVacationApproval}
-                          className="rounded border-slate-300 text-blue-700 focus:ring-blue-500"
-                          onChange={(event) => {
-                            setRules((current) => ({ ...current, requiresVacationApproval: event.target.checked }));
-                            setNotice("");
-                          }}
-                          type="checkbox"
-                        />
-                        Las vacaciones requieren aprobación del empleador
-                      </label>
-                      <p className="text-[0.6875rem] text-slate-500">
-                        Si se desactiva, las solicitudes que cumplen las reglas se aprueban solas.
+                      <FormField
+                        label="Acumular desde"
+                        name="daysOffBacklogFrom"
+                        onChange={updateRule}
+                        type="date"
+                        value={rules.daysOffBacklogFrom ?? ""}
+                      />
+                      <p className="text-[0.6875rem] leading-relaxed text-slate-500">
+                        Sin fecha, los francos adeudados se cuentan desde la
+                        fecha de ingreso de cada empleado. Poné una fecha si
+                        empezaste a usar el sistema después de haber contratado
+                        a tu personal y no querés arrastrar lo anterior.
                       </p>
                     </fieldset>
                     <fieldset className="mt-5 space-y-2">
@@ -795,8 +787,18 @@ function ParticipantConfiguration({ userType = "company" }) {
                       <h3 className="text-sm font-bold text-slate-900">
                         Régimen de vacaciones por antigüedad
                       </h3>
-                      <p className="mt-1 text-[0.625rem] text-slate-500">
-                        Días corridos concedidos de acuerdo con la antigüedad.
+                      <p className="mt-1 text-[0.625rem] leading-relaxed text-slate-500">
+                        Días corridos concedidos de acuerdo con la antigüedad,
+                        medida al 31 de diciembre del año de la licencia. Los
+                        tramos se expresan en meses y se encadenan: cada uno
+                        empieza donde termina el anterior. La escala que viene
+                        cargada es la del artículo 150 de la Ley 20.744.
+                      </p>
+                      <p className="mt-1 text-[0.625rem] leading-relaxed text-slate-500">
+                        Quien no trabajó al menos la mitad de los días hábiles
+                        del año no recibe la licencia completa sino un día por
+                        cada veinte trabajados, como establecen los artículos
+                        151 y 153. El sistema lo aplica solo.
                       </p>
                     </div>
                     <div className="overflow-x-auto rounded-lg border border-slate-100">
@@ -804,8 +806,8 @@ function ParticipantConfiguration({ userType = "company" }) {
                         <thead className="bg-[#edf4ff] text-[0.625rem] uppercase tracking-wide text-slate-600">
                           <tr>
                             <th className="px-4 py-3" scope="col">Tramo</th>
-                            <th className="px-4 py-3" scope="col">Desde</th>
-                            <th className="px-4 py-3" scope="col">Hasta</th>
+                            <th className="px-4 py-3" scope="col">Antigüedad</th>
+                            <th className="px-4 py-3" scope="col">En meses</th>
                             <th className="px-4 py-3" scope="col">Días de vacaciones</th>
                             <th className="px-4 py-3 text-right" scope="col">Acción</th>
                           </tr>
@@ -816,9 +818,11 @@ function ParticipantConfiguration({ userType = "company" }) {
                               <td className="px-4 py-3 font-bold text-blue-800">
                                 Tramo {index + 1}
                               </td>
-                              <td className="px-4 py-3">{range.from} años</td>
-                              <td className="px-4 py-3">
-                                {range.to === null ? "Sin tope" : `${range.to} años`}
+                              <td className="px-4 py-3">{rangeLabel(range)}</td>
+                              <td className="px-4 py-3 text-slate-500">
+                                {range.monthsTo === null
+                                  ? `más de ${range.monthsFrom}`
+                                  : `${range.monthsFrom} a ${range.monthsTo}`}
                               </td>
                               <td className="px-4 py-3">
                                 <label className="inline-flex items-center gap-2">
@@ -873,25 +877,11 @@ function ParticipantConfiguration({ userType = "company" }) {
                       className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
                       onSubmit={addVacationRange}
                     >
-                      <div className="grid grid-cols-3 items-end gap-3 sm:flex sm:flex-wrap">
+                      <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
                         <FormField
                           className={smallInputClassName}
-                          label="Desde (años)"
-                          min="0"
-                          onChange={(event) =>
-                            setNewRange((current) => ({
-                              ...current,
-                              from: event.target.value,
-                            }))
-                          }
-                          required
-                          type="number"
-                          value={newRange.from}
-                        />
-                        <FormField
-                          className={smallInputClassName}
-                          label="Hasta (años)"
-                          min="0"
+                          label="Hasta (meses de antigüedad)"
+                          min="1"
                           onChange={(event) =>
                             setNewRange((current) => ({
                               ...current,
@@ -926,6 +916,8 @@ function ParticipantConfiguration({ userType = "company" }) {
                       </button>
                     </form>
                   </div>
+                  <CompanyHolidays disabled={saving} onNotice={setNotice} />
+
                   <div className="border-t border-slate-200 pt-6">
                     <SectionTitle>
                       Tipos de Turnos

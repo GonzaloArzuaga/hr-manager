@@ -5,6 +5,7 @@ import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
 import PaginationControls from "../../components/PaginationControls";
 import PendingFrancoCard from "../../components/cards/empleado/PendingFrancoCard";
 import RequestedFrancoCard from "../../components/cards/empleado/RequestedFrancoCard";
+import OwedFrancosCard from "../../components/cards/empleado/OwedFrancosCard";
 import { usePagination } from "../../hooks/usePagination";
 import { cancelMyRequest, submitDaysOff } from "../../lib/api";
 import {
@@ -516,38 +517,7 @@ export default function FrancosEmployee() {
             />
             <PendingFrancoCard pendingCount={pendingCount} />
 
-            {/*
-            <article className="flex flex-col justify-between rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-start justify-between">
-                <div>
-                  <p className="mb-1 text-[0.625rem] font-medium text-slate-500">
-                    Francos compensatorios disponibles
-                  </p>
-                  <div className="flex items-baseline gap-2">
-                    <strong className="text-2xl font-extrabold leading-none text-slate-900">2</strong>
-                    <span className="text-[0.625rem] font-medium text-slate-500">días a favor</span>
-                  </div>
-                </div>
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <Icon className="h-4 w-4">
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 7v5l3 2" />
-                  </Icon>
-                </span>
-              </div>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[0.5625rem]">
-                <span className="flex items-center gap-1.5 text-slate-600">
-                  <Icon className="h-3 w-3 text-blue-500">
-                    <path d="M20 7v5h-5M4 17v-5h5m-4.5-2a8 8 0 0113.3-2L20 12M4 12l2.2 4a8 8 0 0013.3-2" />
-                  </Icon>
-                  Devengados por guardia rotativa
-                </span>
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-[0.5rem] font-semibold text-slate-700">
-                  Vencen en 45d
-                </span>
-              </div>
-            </article>
-            */}
+            <OwedFrancosCard />
           </section>
 
           <section

@@ -165,8 +165,9 @@ export default function RecoverPassword() {
                 ¿Olvidaste tu contraseña?
               </h1>
               <p className="mx-auto mt-1.5 max-w-[18.125rem] text-[0.5625rem] leading-relaxed text-slate-600">
-                Ingresá el correo electrónico asociado a tu cuenta corporativa
-                y te enviaremos las instrucciones para restablecer tu acceso.
+                Acá sí va el correo, no el CUIL: es a donde llegan las
+                instrucciones para restablecer tu acceso. Si no recordás con
+                qué correo figurás, pedíselo a tu responsable.
               </p>
             </div>
             <form className="space-y-3" onSubmit={handleSubmit}>

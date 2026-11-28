@@ -1,3 +1,4 @@
+import { holidayOn } from "../lib/store";
 import React, { useEffect, useMemo, useRef } from "react";
 import { useExclusiveOverlay } from "../lib/overlays";
 import { fieldClass } from "./fieldStyles";
@@ -106,33 +107,45 @@ export default function FrancoDatePicker({
               const taken = requestedDates.has(value);
               const tooSoon = Boolean(minDate) && value < minDate;
               const blocked = taken || tooSoon || (!selected && (remaining === 0 || selectedDates.length >= remaining));
+              // El feriado no impide pedir el franco: se marca para que la
+              // persona lo tenga presente al elegir la fecha.
+              const holiday = holidayOn(value);
               const look = selected
                 ? "border-blue-700 bg-blue-700 font-bold text-white shadow-sm"
                 : taken
                   ? "cursor-not-allowed border-blue-200 bg-blue-100 font-bold text-blue-800"
                   : tooSoon
                     ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50";
+                    : holiday
+                      ? "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-400 hover:bg-amber-100"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50";
               return (
                 <button
-                  aria-label={`${day} de ${monthLabel(month)}${selected ? ", seleccionado" : ""}${taken ? ", ya tiene franco" : ""}`}
+                  aria-label={`${day} de ${monthLabel(month)}${selected ? ", seleccionado" : ""}${taken ? ", ya tiene franco" : ""}${holiday ? `, feriado: ${holiday.name}` : ""}`}
                   aria-pressed={selected}
-                  className={`h-8 rounded-md border transition disabled:cursor-not-allowed ${look}`}
+                  className={`relative h-8 rounded-md border transition disabled:cursor-not-allowed ${look}`}
                   data-date={value}
                   disabled={blocked}
                   key={value}
                   onClick={() => onToggleDate(value)}
-                  title={taken ? "Ya tiene franco ese día" : undefined}
+                  title={taken ? "Ya tiene franco ese día" : holiday ? holiday.name : undefined}
                   type="button"
                 >
                   {day}
+                  {holiday && !selected && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-amber-500"
+                    />
+                  )}
                 </button>
               );
             })}
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
             <span aria-live="polite" className="text-[0.5625rem] font-semibold text-slate-600">
-              {selectedDates.length} seleccionados · {Math.max(0, remaining - selectedDates.length)} disponibles
+              <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+              feriado · {selectedDates.length} seleccionados · {Math.max(0, remaining - selectedDates.length)} disponibles
             </span>
             <button className="rounded-lg bg-blue-700 px-3 py-1.5 text-[0.5625rem] font-semibold text-white transition hover:bg-blue-800" onClick={close} type="button">
               Listo

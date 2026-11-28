@@ -12,13 +12,18 @@ export default function Login() {
   async function handleSubmit(event) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const email = String(formData.get("email")).trim().toLowerCase();
+    const cuil = String(formData.get("cuil")).replace(/\D/g, "");
     const password = String(formData.get("password"));
+
+    if (cuil.length !== 11) {
+      setNotice("El CUIL tiene 11 dígitos. Escribilo sin puntos ni guiones.");
+      return;
+    }
 
     setSubmitting(true);
     setNotice("");
     try {
-      await signIn(email, password);
+      await signIn(cuil, password);
       const account = await loadAccount();
       if (!account) {
         setNotice("Tu usuario no tiene una cuenta asociada. Pedile al administrador del sistema o a tu empleador que revise el alta.");
@@ -58,20 +63,27 @@ export default function Login() {
             <div>
               <label
                 className="mb-1.5 block text-[0.625rem] font-semibold text-slate-700"
-                htmlFor="email"
+                htmlFor="cuil"
               >
-                Email
+                CUIL
               </label>
               <input
                 autoComplete="username"
-                className="h-[1.9375rem] w-full rounded-md border border-slate-200 px-2.5 text-[0.625rem] text-slate-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                id="email"
-                name="email"
+                className="h-[1.9375rem] w-full rounded-md border border-slate-200 px-2.5 text-[0.625rem] tracking-wider text-slate-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                id="cuil"
+                inputMode="numeric"
+                maxLength={13}
+                name="cuil"
                 onChange={() => setNotice("")}
-                placeholder="ejemplo@mail.com"
+                pattern="[0-9.\-\s]*"
+                placeholder="20123456789"
                 required
-                type="email"
+                type="text"
               />
+              <p className="mt-1 text-[0.5625rem] leading-relaxed text-slate-500">
+                Son 11 dígitos, sin puntos ni guiones. La cuenta de la empresa
+                ingresa con su CUIT.
+              </p>
             </div>
             <div>
               <label

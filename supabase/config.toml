@@ -3,3 +3,19 @@ project_id = "hr-manager"
 
 [functions.create-employee]
 verify_jwt = true
+
+[functions.update-employee-email]
+verify_jwt = true
+
+[functions.admin-companies]
+verify_jwt = true
+
+[functions.sync-feriados]
+verify_jwt = true
+
+# El ingreso con CUIL se invoca antes de que exista la sesión, así que esta
+# función no puede exigir un token. La verificación la hace ella misma: no
+# devuelve ningún dato sin contrastar la contraseña, y ante una identificación
+# inexistente responde lo mismo que ante una contraseña incorrecta.
+[functions.login-cuil]
+verify_jwt = false

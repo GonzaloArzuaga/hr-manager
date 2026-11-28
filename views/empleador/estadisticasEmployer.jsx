@@ -517,9 +517,10 @@ export default function EstadisticasEmployer() {
                       : "Todos los meses tienen al menos una solicitud."}
                 </InsightCard>
                 <InsightCard title="Reglas vigentes" tone="slate">
-                  Las vacaciones se piden con {rules.vacationNotice ?? 0} días de aviso y{" "}
-                  {rules.requiresVacationApproval ? "requieren tu aprobación" : "se aprueban solas si cumplen las reglas"}.
-                  Francos: {rules.weeklyDaysOff ?? 0} por semana, con {rules.daysOffNotice ?? 0} días de aviso.
+                  Las vacaciones se cargan con {rules.vacationNotice ?? 0} días de aviso y
+                  siempre requieren tu aprobación. Francos:{" "}
+                  {rules.weeklyDaysOff ?? 0} por semana, con{" "}
+                  {rules.daysOffNotice ?? 1} {(rules.daysOffNotice ?? 1) === 1 ? "día" : "días"} de aviso.
                 </InsightCard>
               </div>
             }

@@ -1,3 +1,4 @@
+import { holidayOn } from "../lib/store";
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useExclusiveOverlay } from "../lib/overlays";
@@ -332,18 +333,27 @@ export function DateField({
                 {Array.from({ length: daysInMonth }, (_, index) => {
                   const key = `${cursor.year}-${pad(cursor.month + 1)}-${pad(index + 1)}`;
                   const off = outOfRange(key);
+                  // El feriado se marca pero no bloquea la fecha.
+                  const holiday = holidayOn(key);
                   return (
                     <button
-                      aria-label={toDisplayDate(key)}
+                      aria-label={`${toDisplayDate(key)}${holiday ? `, feriado: ${holiday.name}` : ""}`}
                       aria-pressed={key === value}
-                      className={`flex h-7 items-center justify-center rounded-lg transition ${cellClass(key === value, off, key === today)}`}
+                      className={`relative flex h-7 items-center justify-center rounded-lg transition ${cellClass(key === value, off, key === today)} ${holiday && key !== value && !off ? "text-amber-900" : ""}`}
                       data-date={key}
                       disabled={off}
                       key={key}
                       onClick={() => choose(key)}
+                      title={holiday ? holiday.name : undefined}
                       type="button"
                     >
                       {index + 1}
+                      {holiday && key !== value && !off && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-amber-500"
+                        />
+                      )}
                     </button>
                   );
                 })}

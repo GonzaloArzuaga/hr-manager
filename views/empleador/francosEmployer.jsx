@@ -3,6 +3,7 @@ import FrancoDatePicker from "../../components/FrancoDatePicker";
 import { fieldClass } from "../../components/fieldStyles";
 import { useExclusiveOverlay } from "../../lib/overlays";
 import MonthlyFrancosCard from "../../components/cards/empleador/MonthlyFrancosCard";
+import FrancosBacklogCard from "../../components/cards/empleador/FrancosBacklogCard";
 import { employeeOptionLabel } from "../../data/employeeDirectory";
 import { CheckIcon } from "../../components/icons";
 import { confirmDialog, promptDialog, toast } from "../../lib/feedback";
@@ -111,6 +112,8 @@ const initialAssignmentForm = {
   employeeId: "",
   month: getCurrentMonth(),
   selectedDays: [],
+  compensatory: false,
+  surcharge: false,
 };
 function formatMonthOption(value) {
   const [year, month] = value.split("-").map(Number);
@@ -315,6 +318,12 @@ export default function FrancosEmployer() {
   const [showRules, setShowRules] = useState(false);
   const [showDayPicker, setShowDayPicker] = useState(false);
   const todayValue = new Date().toLocaleDateString("sv-SE");
+  // Los francos se asignan desde mañana: el empleado ya está trabajando hoy.
+  const earliestAssignable = (() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toLocaleDateString("sv-SE");
+  })();
   const counts = {
     Todos: requests.length,
     "Pendiente de revisión": requests.filter((request) => request.status === "Pendiente de revisión").length,
@@ -515,7 +524,11 @@ export default function FrancosEmployer() {
       await assignDaysOff({
         employeeDbId: selectedEmployee.dbId,
         dates,
-        reason: "Asignación directa del empleador",
+        reason: assignmentForm.compensatory
+          ? "Franco compensatorio asignado por el empleador"
+          : "Asignación directa del empleador",
+        compensatory: assignmentForm.compensatory,
+        surcharge: assignmentForm.surcharge,
       });
       setRequests([...francosData.requests]);
       toast.success(`Se asignaron ${dates.length} ${dates.length === 1 ? "franco" : "francos"} a ${selectedEmployee.name}.`);
@@ -633,7 +646,7 @@ export default function FrancosEmployer() {
                   <FrancoDatePicker
                     disabled={!selectedEmployee}
                     id="franco-dates"
-                    minDate={todayValue}
+                    minDate={earliestAssignable}
                     minMonth={currentMonth}
                     month={assignmentForm.month}
                     onChangeMonth={changeAssignmentMonth}
@@ -667,6 +680,48 @@ export default function FrancosEmployer() {
                   </div>
                 </div>
               </div>
+
+              <fieldset className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                <legend className="px-1 text-[0.5625rem] font-bold uppercase tracking-wider text-slate-500">
+                  Franco compensatorio
+                </legend>
+                <label className="flex items-start gap-2 text-[0.625rem] text-slate-700">
+                  <input
+                    checked={assignmentForm.compensatory}
+                    className="mt-0.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                    onChange={(event) =>
+                      setAssignmentForm((actual) => ({
+                        ...actual,
+                        compensatory: event.target.checked,
+                        surcharge: event.target.checked ? actual.surcharge : false,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Compensa un descanso que no se otorgó en su momento
+                  </span>
+                </label>
+                <label
+                  className={`flex items-start gap-2 text-[0.625rem] ${
+                    assignmentForm.compensatory ? "text-slate-700" : "text-slate-400"
+                  }`}
+                >
+                  <input
+                    checked={assignmentForm.surcharge}
+                    className="mt-0.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                    disabled={!assignmentForm.compensatory}
+                    onChange={(event) =>
+                      setAssignmentForm((actual) => ({ ...actual, surcharge: event.target.checked }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Se otorga fuera de término: el día se paga con el 100 % de
+                    recargo, conforme al artículo 207 de la Ley 20.744
+                  </span>
+                </label>
+              </fieldset>
 
               {assignmentError && (
                 <p className="text-[0.625rem] font-medium text-rose-600" role="alert">
@@ -708,6 +763,8 @@ export default function FrancosEmployer() {
             requests={requests}
             weeklyDaysOff={businessRules.weeklyDaysOff}
           />
+
+          <FrancosBacklogCard />
 
           <section
             aria-label="Resumen de solicitudes"
